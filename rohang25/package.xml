@@ -2,12 +2,28 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>rohang25</name>
-  <version>0.0.0</version>
-  <description>TODO: Package description</description>
+  <version>0.1.0</version>
+  <description>Rohang25 offboard control package</description>
   <maintainer email="21yejiny@gmail.com">yejin</maintainer>
   <license>TODO: License declaration</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
+  
+  <build_depend>ros_environment</build_depend>
+  
+  <depend>builtin_interfaces</depend>
+  <depend>rclcpp</depend>
+  
+  <depend>px4_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>sensor_msgs</depend>
+
+  <depend>launch</depend>
+  <depend>launch_testing</depend>
+  <depend>launch_testing_ros</depend>
+
+  <exec_depend>rosidl_default_runtime</exec_depend>
+  <exec_depend>ros2launch</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

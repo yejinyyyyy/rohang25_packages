@@ -86,9 +86,23 @@ std::vector<double> ecef2enu(std::vector<double> ecef,
   out.push_back(n);
   out.push_back(u);
 
-  std::cout<<"ENU "<<e<<" "<<n<<" "<<u<<std::endl;
+  // std::cout<<"ENU "<<e<<" "<<n<<" "<<u<<std::endl;
 
   return out;
+}
+
+std::vector<double> ecef2ned(std::vector<double> ecef,
+                            std::vector<double> ori_ecef)
+{
+  std::vector<double> enu = ecef2enu(ecef, ori_ecef);
+  std::vector<double> ned(3);
+  ned[0] = enu[1];
+  ned[1] = enu[0];
+  ned[2] = -enu[2];
+  
+  std::cout<<"NED "<<ned[0]<<" "<<ned[1]<<" "<<ned[2]<<std::endl;
+
+  return ned;
 }
 
 std::vector<double> ecef2en(std::vector<double> ecef,

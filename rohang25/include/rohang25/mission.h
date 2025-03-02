@@ -215,7 +215,22 @@ void mission_llh2enu(std::vector<std::vector<double>> &mission, std::vector<doub
         mission[i][1] = point_enu[1];
         mission[i][2] = point_enu[2];
     }
+}
 
+void mission_llh2ned(std::vector<std::vector<double>> &mission, std::vector<double> home_llh)
+{
+    std::vector<double> home_ecef = llh2ecef(home_llh);
+    std::vector<double> point_ecef, point_ned;
+    int i = 0;
+    int size = mission.size();
+
+    for(i=0; i<size; i++){
+        point_ecef = llh2ecef(mission[i]);
+        point_ned = ecef2ned(point_ecef, home_ecef);
+        mission[i][0] = point_ned[0];
+        mission[i][1] = point_ned[1];
+        mission[i][2] = point_ned[2];
+    }
 }
 
 void mission_calib_local(std::vector<std::vector<double>> &mission, std::vector<double> home_local)
