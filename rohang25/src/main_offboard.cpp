@@ -83,7 +83,7 @@ public:
 		/******************************
 		*  	Coordinates setting		  *
 		******************************/
-		std::vector<double> home_local = {local_pose.x, local_pose.y, local_pose.z};
+		std::vector<double> home_local = {local_pose.y, local_pose.x, -local_pose.z}; // NED -> ENU
 		std::vector<double> home_global = {36.6609901, 126.3418280, 28.5};
 
 		if(FRAME_MODE == LLH){
@@ -93,12 +93,12 @@ public:
 			// WPT[8][0] = home_global[0];  
 			// WPT[8][1] = home_global[1];  // change later
 
-			// for (int i=0; i<9; i++)
-			// {
-			//     WPT[i][2] = WPT[i][2] + home_global[2];
-			// }
+			for (int i=0; i<9; i++)
+			{
+			    WPT[i][2] = WPT[i][2] + home_global[2];
+			}
 
-			mission_llh2ned(WPT, home_global);
+			mission_llh2enu(WPT, home_global);
 			mission_calib_local(WPT, home_local);
 
 			// for (int i=0; i<9; i++)
@@ -139,7 +139,9 @@ private:
 		offboard_requested,
 		wait_for_stable_offboard_mode,
 		arm_requested,
-		armed
+		armed,
+		transition_requested,
+		flying
 	} state_;
 
 	uint8_t service_result_;
@@ -225,19 +227,22 @@ void OffboardControl::disarm()
 void OffboardControl::do_vtol_transition()
 {
 	RCLCPP_INFO(this->get_logger(), "requesting transition to fixed-wing");
-	request_vehicle_command(VehicleCommand::VEHICLE_CMD_DO_VTOL_TRANSITION, 1.0);
+	request_vehicle_command(VehicleCommand::VEHICLE_CMD_DO_VTOL_TRANSITION, FW);
+	state_ = State::transition_requested;
 }
 
 void OffboardControl::do_back_transition()
 {
 	RCLCPP_INFO(this->get_logger(), "requesting transition to multicopter");
-	request_vehicle_command(VehicleCommand::VEHICLE_CMD_DO_VTOL_TRANSITION, 0.0);
+	request_vehicle_command(VehicleCommand::VEHICLE_CMD_DO_VTOL_TRANSITION, MC);
+	state_ = State::transition_requested;
 }
 
 void OffboardControl::land()
 {
 	RCLCPP_INFO(this->get_logger(), "requesting AUTO LAND");
 	request_vehicle_command(VehicleCommand::VEHICLE_CMD_NAV_LAND);
+	// land requested
 }
 
 /**
@@ -333,8 +338,8 @@ void OffboardControl::publish_trajectory_setpoint()
 	/******************************
  	*   Local position Update	  *
  	******************************/
-	local3 = {local_pose.x, local_pose.y, local_pose.z};
-	set_position(pose, {local_pose.x, local_pose.y, local_pose.z});  // local3 ?
+	// local3 = {local_pose.x, local_pose.y, local_pose.z};
+	set_position(pose, {local_pose.y, local_pose.x, -local_pose.z}); 
 
 	/******************************
  	*   Calculate Setpoint  	  *
@@ -345,7 +350,7 @@ void OffboardControl::publish_trajectory_setpoint()
 		{
 		case 0:
 			// i=0; Takeoff
-			set = {local_pose.x, local_pose.y, WPT[i][2]};
+			set = {local_pose.y, local_pose.x, WPT[i][2]};
 			
 			set_position(pose, set);
 			set_heading(pose, current_yaw_);
@@ -366,7 +371,7 @@ void OffboardControl::publish_trajectory_setpoint()
 					//         hold_flag2 = true;
 					//     if(hold_flag2){
 						RCLCPP_INFO(this->get_logger(), "Take off Complete");
-						RCLCPP_INFO(this->get_logger(), "================== move to BASE ");
+						RCLCPP_INFO(this->get_logger(),  "move to BASE =============");
 						process++; // 다음 단계
 						i++;
 
@@ -384,11 +389,11 @@ void OffboardControl::publish_trajectory_setpoint()
 		case 1: // WPT1 and Hover
 			// i=1; WPT#1 MC
 			
-			//start = {WPT[i-1][0], WPT[i-1][1]};
+			start = {WPT[i-1][0], WPT[i-1][1]};
 			end = {WPT[i][0], WPT[i][1]};
-			local = {local_pose.x, local_pose.y};
+			local = {local_pose.y, local_pose.x};
 			set = line_guidance(local, end, local, 2*step);
-			set = {local_pose.x + set[0], local_pose.y + set[1], WPT[i][2]};
+			set = {local_pose.y + set[0], local_pose.x + set[1], WPT[i][2]};
 			set_position(pose, set);
 			if( is_arrived_hori(local_pose, WPT[i], h_err) && is_arrived_verti(local_pose, WPT[i], v_err) || is_increase_dist(remain_dist(local_pose, WPT[i])) ){
 				set_position(pose, WPT[i]);
@@ -434,13 +439,14 @@ void OffboardControl::publish_trajectory_setpoint()
 				//   hold_flag = true;
 			// if(hold_flag){
 				do_vtol_transition();
-				if(service_done_){
+				if(state_ == State::transition_requested){
+					state_ = State::armed;
 					current_flight_mode = FW;
 					step = FW_SPEED;
 					h_err = FW_HORIZONTAL_ERROR;
 					v_err = FW_VERTICAL_ERROR;
 
-					RCLCPP_INFO(this->get_logger(), "================== Transition FW");
+					RCLCPP_INFO(this->get_logger(), "Transition FW ===========");
 					process++;
 				}
 				set_position(pose, WPT[i]);
@@ -456,9 +462,9 @@ void OffboardControl::publish_trajectory_setpoint()
 
 			start = {WPT[i-1][0], WPT[i-1][1]};
 			end = {WPT[i][0], WPT[i][1]};
-			local = {local_pose.x, local_pose.y};
+			local = {local_pose.y, local_pose.x};
 			set = line_guidance(start, end, local, step);
-			set = {local_pose.x + set[0], local_pose.y + set[1], WPT[i][2]};
+			set = {local_pose.y + set[0], local_pose.x + set[1], WPT[i][2]};
 			set_position(pose, set);
 
 
@@ -478,9 +484,9 @@ void OffboardControl::publish_trajectory_setpoint()
 
 			// start = {WPT[i-1][0], WPT[i-1][1]};
 			// end = {WPT[i][0], WPT[i][1]};
-			local = {local_pose.x, local_pose.y};
+			local = {local_pose.y, local_pose.x};
 			set = Pturn_guidance(WPT[i-1], WPT[i], WPT[i+1], PTURN_RADIUS, local, step);
-			set = {local_pose.x + set[0], local_pose.y + set[1], WPT[i][2]};
+			set = {local_pose.y + set[0], local_pose.x + set[1], WPT[i][2]};
 			set_position(pose, set);
 
 			if(hold_flag == false && hold(1)){ // 3번 경로점을 충분히 지나갈 때까지 대기
@@ -507,9 +513,9 @@ void OffboardControl::publish_trajectory_setpoint()
 			// i=3; WPT#3
 			start = {WPT[i-1][0], WPT[i-1][1]};
 			end = {WPT[i][0], WPT[i][1]};
-			local = {local_pose.x, local_pose.y};
+			local = {local_pose.y, local_pose.x};
 			set = line_guidance(start, end, local, step);
-			set = {local_pose.x + set[0], local_pose.y + set[1], WPT[i][2]};
+			set = {local_pose.y + set[0], local_pose.x + set[1], WPT[i][2]};
 			set_position(pose, set);
 
 			if(is_arrived_hori(local_pose, WPT[i], h_err) || is_increase_dist(remain_dist(local_pose, WPT[i]))){
@@ -531,9 +537,9 @@ void OffboardControl::publish_trajectory_setpoint()
 			middle = {WPT[i][0], WPT[i][1]};
 			end = {WPT[i+1][0], WPT[i+1][1]};
 
-			local = {local_pose.x, local_pose.y};
+			local = {local_pose.y, local_pose.x};
 			set = Pturn_guidance(start, middle, end, 30, local, step);
-			set = {local_pose.x + set[0], local_pose.y + set[1], local_pose.z-3} ;
+			set = {local_pose.y + set[0], local_pose.x + set[1], local_pose.z-3} ;
 			if(set[2] < WPT[i+1][2] + 3){ 
 				set[2] = WPT[i+1][2];
 			}
@@ -565,9 +571,9 @@ void OffboardControl::publish_trajectory_setpoint()
 			// i=4; WPT#4
 			start = {WPT[i-1][0], WPT[i-1][1]};
 			end = {WPT[i][0], WPT[i][1]};
-			local = {local_pose.x, local_pose.y};
+			local = {local_pose.y, local_pose.x};
 			set = line_guidance(start, end, local, step);
-			set = {local_pose.x + set[0], local_pose.y + set[1], WPT[i][2]};  // 좌표로 고도 반영
+			set = {local_pose.y + set[0], local_pose.x + set[1], WPT[i][2]};  // 좌표로 고도 반영
 			set_position(pose, set);
 
 			if(is_arrived_hori(local_pose, WPT[i], h_err) || is_increase_dist(remain_dist(local_pose, WPT[i]))){
@@ -585,9 +591,9 @@ void OffboardControl::publish_trajectory_setpoint()
 			// i=5; WPT#5
 			start = {WPT[i-1][0], WPT[i-1][1]};
 			end = {WPT[i][0], WPT[i][1]};
-			local = {local_pose.x, local_pose.y};
+			local = {local_pose.y, local_pose.x};
 			set = line_guidance(start, end, local, step);
-			set = {local_pose.x + set[0], local_pose.y + set[1], WPT[i][2]};
+			set = {local_pose.y + set[0], local_pose.x + set[1], WPT[i][2]};
 			set_position(pose, set);
 
 			if(is_arrived_hori(local_pose, WPT[i], h_err) || is_increase_dist(remain_dist(local_pose, WPT[i]))){
@@ -606,9 +612,9 @@ void OffboardControl::publish_trajectory_setpoint()
 			// LIDAR??
 			start = {WPT[i-1][0], WPT[i-1][1]};
 			end = {WPT[i][0], WPT[i][1]};
-			local = {local_pose.x, local_pose.y};
+			local = {local_pose.y, local_pose.x};
 			set = line_guidance(start, end, local, step);
-			set = {local_pose.x + set[0], local_pose.y + set[1], local_pose.z + CLIME_RATE};
+			set = {local_pose.y + set[0], local_pose.x + set[1], local_pose.z + CLIME_RATE};
 			set_position(pose, set);
 
 			if(is_arrived_hori(local_pose, WPT[i], h_err) || is_increase_dist(remain_dist(local_pose, WPT[i]))){
@@ -628,9 +634,9 @@ void OffboardControl::publish_trajectory_setpoint()
 			middle = {WPT[i][0], WPT[i][1]};
 			end = {WPT[i+1][0], WPT[i+1][1]};
 
-			local = {local_pose.x, local_pose.y};
+			local = {local_pose.y, local_pose.x};
 			set = Pturn_guidance(start, middle, end, 10, local, step);
-			set = {local_pose.x + set[0], local_pose.y + set[1], local_pose.z + CLIME_RATE};
+			set = {local_pose.y + set[0], local_pose.x + set[1], local_pose.z + CLIME_RATE};
 			if(set[2] > WPT[i][2] - 5){ // 목표고도에 근접하면 상승률이 낮아지므로 목표고도 자체를 조금 더 높게 설정
 				set[2] = WPT[i][2];
 			}
@@ -662,9 +668,9 @@ void OffboardControl::publish_trajectory_setpoint()
 			// i=7; WPT#7
 			start = {WPT[i-1][0], WPT[i-1][1]};
 			end = {WPT[i][0], WPT[i][1]};
-			local = {local_pose.x, local_pose.y};
+			local = {local_pose.y, local_pose.x};
 			set = line_guidance(start, end, local, step);
-			set = {local_pose.x + set[0], local_pose.y + set[1], WPT[i][2]};
+			set = {local_pose.y + set[0], local_pose.x + set[1], WPT[i][2]};
 			set_position(pose, set);
 
 			if(remain_dist(local_pose, WPT[i]) < BACK_TRANSITION_DIST){
@@ -683,7 +689,8 @@ void OffboardControl::publish_trajectory_setpoint()
 			
 			do_back_transition();
 
-			if(service_done_){
+			if(state_ == State::transition_requested){
+				state_ = State::flying;
 				current_flight_mode = MC;
 				step = MC_SPEED;
 				h_err = MC_HORIZONTAL_ERROR;
@@ -765,11 +772,11 @@ void OffboardControl::publish_trajectory_setpoint()
  	*  Print & Log current info   *
  	******************************/
     remain = remain_dist(local_pose, WPT[i]);
-	RCLCPP_INFO(this->get_logger(), "Timestamp: %lld", current_timestamp_);
-	RCLCPP_INFO(this->get_logger(), "Current: %.2f, %.2f %.2f", local_pose.x, local_pose.y, local_pose.z);
-	RCLCPP_INFO(this->get_logger(), "Setpoint: %.2f, %.2f, %.2f", set[0], set[1], set[2]);
-	RCLCPP_INFO(this->get_logger(), "Remain Dist: %f, WPT#%d", remain, i);
-	RCLCPP_INFO(this->get_logger(), "\n");
+	// RCLCPP_INFO(this->get_logger(), "Timestamp: %lld", current_timestamp_);
+	// RCLCPP_INFO(this->get_logger(), "Current: %.2f, %.2f %.2f", local_pose.x, local_pose.y, local_pose.z);
+	// RCLCPP_INFO(this->get_logger(), "Setpoint: %.2f, %.2f, %.2f", set[0], set[1], set[2]);
+	// RCLCPP_INFO(this->get_logger(), "Remain Dist: %f, WPT#%d", remain, i);
+	// RCLCPP_INFO(this->get_logger(), "\n");
 	//save_setpoint_local(SPT_FILE_PATH, timestamp, i, set, local3);
 
 	/******************************
@@ -823,6 +830,18 @@ void OffboardControl::timer_callback(void){
 			}
 		}
 		break;
+	case State::transition_requested :
+		if(service_done_){
+			if (service_result_==0){
+				RCLCPP_INFO(this->get_logger(), "Transition success");
+					state_ = State::armed;
+			}
+			else{
+				RCLCPP_ERROR(this->get_logger(), "Transition Failed, exiting");
+				rclcpp::shutdown();
+			}
+		}
+		break;
 	default:
 		break;
 	}
@@ -838,21 +857,31 @@ void OffboardControl::timer_callback(void){
  	*  	Print Sensor Data       *
  	*****************************/
 	log_counter_++;
-	if (log_counter_ % 10 == 0) {
+	if (log_counter_ % 5 == 0) {
 		RCLCPP_INFO(this->get_logger(),
-					"\n========== SENSOR STATE ==========\n"
-					"Airspeed:\n"
-					"  Indicated: %.2f m/s, True: %.2f m/s\n"
-					"Attitude:\n"
-					"  Roll: %.2f, Pitch: %.2f, Heading: %.2f°\n"
-					"GPS:\n"
-					"  Latitude: %.7f, Longitude: %.7f, Altitude: %.2f m\n"
+					"\n========== CURRENT STATE ==========\n"
+					"Timestamp: %ld\n"
+					"Current: %.2f, %.2f %.2f\n"
+					"Setpoint: %.2f, %.2f, %.2f\n"
+					"Current heading: %.2f/ Set heading: %.2f\n"
+					"Remain Dist: %f, to WPT#%d\n"
+					"Case #%d\n"
+					// "Airspeed:\n"
+					// "  Indicated: %.2f m/s, True: %.2f m/s\n"
+					// "Attitude:\n"
+					// "  Roll: %.2f, Pitch: %.2f, Heading: %.2f°\n"
+					// "GPS:\n"
+					// "  Latitude: %.7f, Longitude: %.7f, Altitude: %.2f m\n"
 					"==================================\n",
-					current_indicated_airspeed_, current_true_airspeed_,
-					current_roll_, current_pitch_, current_heading_,
-					current_latitude_, current_longitude_, current_altitude_);
+					current_timestamp_, local_pose.x, local_pose.y, local_pose.z, 
+					pose.position[0], pose.position[1], pose.position[2],
+					current_heading_, DEF_R2D(heading),
+					remain, i, process
+					// current_indicated_airspeed_, current_true_airspeed_,
+					// current_roll_, current_pitch_, current_heading_,
+					// current_latitude_, current_longitude_, current_altitude_
+				);
 	}
-
 }
 // ====================================================================================
 

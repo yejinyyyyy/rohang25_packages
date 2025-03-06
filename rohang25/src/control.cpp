@@ -2,10 +2,10 @@
 
 void set_position(px4_msgs::msg::TrajectorySetpoint &pose, std::vector<double> coor)
 {
-    // 기체 자세에서 로컬 위치 지정
-    pose.position[0] = coor[0];
-    pose.position[1] = coor[1];
-    pose.position[2] = coor[2];
+    // 기체 자세에서 로컬 위치 지정 (ENU -> NED)
+    pose.position[0] = coor[1];
+    pose.position[1] = coor[0];
+    pose.position[2] = -coor[2];
 }
 
 void set_heading(px4_msgs::msg::TrajectorySetpoint &pose, double heading)
@@ -14,7 +14,9 @@ void set_heading(px4_msgs::msg::TrajectorySetpoint &pose, double heading)
     // Input : 
     // pose: 자세 저장할 변수, heading: 북쪽 기준으로 시계방향 각도 (radian)
 
-    heading = - heading + (M_PI/2);
+    if(heading > M_PI){
+        heading = heading - 2*M_PI;
+    }
 
     pose.yaw = heading;
 }
@@ -29,7 +31,7 @@ bool hold(double seconds)
 {
     // 지정된 시간 재주는 타이머. 시간 지나고 호출되면 true 반환
     static bool flag = false;
-    static rclcpp::Time start_time;
+    static rclcpp::Time start_time; 
     rclcpp::Clock clock(RCL_ROS_TIME);
 
     if(seconds == 0){
@@ -53,8 +55,8 @@ bool is_arrived_hori(px4_msgs::msg::VehicleLocalPosition local, std::vector<doub
 {
     // 지정된 수평 오차 이내로 목표점에 도달했는지 확인
 
-    double x_err = set[0] - local.x;  // N
-    double y_err = set[1] - local.y;  // E
+    double x_err = set[0] - local.y;  // E
+    double y_err = set[1] - local.x;  // N
     double d_err = norm({x_err, y_err});         
 
     // double hori_err;
@@ -76,7 +78,7 @@ bool is_arrived_verti(px4_msgs::msg::VehicleLocalPosition local, std::vector<dou
 {
     // 지정된 수직 오차 이내로 목표점에 도달했는지 확인
     // double z_err = abs(set_pos.pose.position.z - my_pos.pose.position.z);
-    double z_err = abs(set[2] - local.z);
+    double z_err = abs(set[2] + local.z); //* */
 
     // double verti_err;
     // if(current_flight_mode == MC){
@@ -152,7 +154,7 @@ std::vector<double> next_waypoint_unitvector(std::vector<double> start, std::vec
 double remain_dist(px4_msgs::msg::VehicleLocalPosition my_pos, std::vector<double> wpt)
 {
     // 현재 위치와 목표점 사이의 수평 거리
-    std::vector<double> local = {my_pos.x, my_pos.y};
+    std::vector<double> local = {my_pos.y, my_pos.x};
     wpt.pop_back();
     return norm(eminus(wpt, local));
 }
