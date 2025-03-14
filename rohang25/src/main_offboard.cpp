@@ -44,7 +44,7 @@ public:
 	{
 		rmw_qos_profile_t qos_profile = rmw_qos_profile_sensor_data;
 		qos_profile.history = RMW_QOS_POLICY_HISTORY_KEEP_LAST;
-		qos_profile.depth = 10;
+		qos_profile.depth = 20;
 		auto qos = rclcpp::QoS(rclcpp::QoSInitialization(qos_profile.history, qos_profile.depth), qos_profile);
 
 		offboard_control_mode_publisher_ = this->create_publisher<OffboardControlMode>("/fmu/in/offboard_control_mode", 10);
@@ -78,33 +78,6 @@ public:
 
 		timer_ = this->create_wall_timer(100ms, std::bind(&OffboardControl::timer_callback, this));
 
-
-		/******************************
-		*  	Coordinates setting		  *
-		******************************/
-		std::vector<double> home_local = {local_pose.y, local_pose.x, -local_pose.z}; // NED -> ENU
-		std::vector<double> home_global = {36.6609901, 126.3418280, 28.5};
-
-		if(FRAME_MODE == LLH){
-			RCLCPP_INFO(this->get_logger(), "global: %f, %f, %f", home_global[0], home_global[1], home_global[2]);
-			RCLCPP_INFO(this->get_logger(), "local: %f, %f, %f", home_local[0], home_local[1], home_local[2]);
-			
-			// WPT[8][0] = home_global[0];  
-			// WPT[8][1] = home_global[1];  // change later
-
-			for (int i=0; i<9; i++)
-			{
-			    WPT[i][2] = WPT[i][2] + home_global[2];
-			}
-
-			mission_llh2enu(WPT, home_global);
-			mission_calib_local(WPT, home_local);
-
-			// for (int i=0; i<9; i++)
-			// {
-			//     WPT[i][2] = -50;
-			// }                         // temporary
-		}
 
 		RCLCPP_INFO(this->get_logger(), "\nMission Start =================== 0310 UPDATE\n");
 
@@ -145,7 +118,8 @@ private:
 		arm_requested,
 		armed,
 		transition_requested,
-		flying
+		flying,
+		land_requested
 	} state_;
 
 	uint8_t service_result_;
@@ -177,6 +151,7 @@ private:
     
     bool hold_flag = false;
     bool hold_flag2 = false;
+	bool gps_flag = false;
 
     float step = MC_SPEED;
     double h_err = MC_HORIZONTAL_ERROR;
@@ -247,8 +222,7 @@ void OffboardControl::land()
 {
 	RCLCPP_INFO(this->get_logger(), "requesting AUTO LAND");
 	request_vehicle_command(VehicleCommand::VEHICLE_CMD_NAV_LAND);
-	// land requested
-}
+	state_ = State::land_requested;}
 
 /**
  * @brief Set control mode (*position control)
@@ -333,6 +307,32 @@ void OffboardControl::listener_callback_gps(const SensorGps::SharedPtr msg)
 	current_latitude_  = msg->latitude_deg;
 	current_longitude_ = msg->longitude_deg;
 	current_altitude_  = msg->altitude_msl_m;
+
+	/******************************
+	*  	Coordinates setting		  *
+	******************************/
+
+	if(FRAME_MODE == LLH && gps_flag == false ){  // wait GPS data
+
+		std::vector<double> home_local = {local_pose.y, local_pose.x, -local_pose.z}; // NED -> ENU
+		std::vector<double> home_global = {current_latitude_, current_longitude_, current_altitude_};
+
+		RCLCPP_INFO(this->get_logger(), "global: %f, %f, %f", home_global[0], home_global[1], home_global[2]);
+		RCLCPP_INFO(this->get_logger(), "local: %f, %f, %f", home_local[0], home_local[1], home_local[2]);
+
+		WPT[8][0] = home_global[0];  
+		WPT[8][1] = home_global[1];  // change later
+
+		for (int i=0; i<9; i++)
+		{
+			WPT[i][2] = WPT[i][2] + home_global[2];
+		}
+
+		mission_llh2enu(WPT, home_global);
+		mission_calib_local(WPT, home_local);
+
+		gps_flag = true;
+	}
 }
 
 /**
@@ -790,7 +790,7 @@ void OffboardControl::publish_trajectory_setpoint()
 		case 14: // Land
 			land();
 
-			if(service_done_)
+			if(state_ == State::land_requested)
 			{
 				RCLCPP_INFO(this->get_logger(), "================ Auto Land enabled ");
 				process++;
@@ -803,11 +803,6 @@ void OffboardControl::publish_trajectory_setpoint()
  	*  Print & Log current info   *
  	******************************/
     remain = remain_dist(local_pose, WPT[i]);
-	// RCLCPP_INFO(this->get_logger(), "Timestamp: %lld", current_timestamp_);
-	// RCLCPP_INFO(this->get_logger(), "Current: %.2f, %.2f %.2f", local_pose.x, local_pose.y, local_pose.z);
-	// RCLCPP_INFO(this->get_logger(), "Setpoint: %.2f, %.2f, %.2f", set[0], set[1], set[2]);
-	// RCLCPP_INFO(this->get_logger(), "Remain Dist: %f, WPT#%d", remain, i);
-	// RCLCPP_INFO(this->get_logger(), "\n");
 	save_setpoint_local(SPT_FILE_PATH, current_timestamp_, i, set, local3);
 
 	/******************************
