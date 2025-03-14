@@ -1,10 +1,10 @@
 #include "log.h"
 
-// int create_file(const char *path)
-// {
-//    FILE *fp = fopen(path, "w");
-//    fclose(fp);
-// }
+int create_file(const char *path)
+{
+   FILE *fp = fopen(path, "w");
+   fclose(fp);
+}
 
 // void save_timestamp(const char *path, int wpt, unsigned long long time)
 // {
@@ -20,12 +20,13 @@
 //    fclose(fp);
 // }
 
-// void save_setpoint_local(const char *path, unsigned long long time, int wpt, std::vector<double> setpoint, std::vector<double> local)
-// {
-//    FILE *fp = fopen(path, "a+");
-//    fprintf(fp, "%lld,<%d>,Setpoint,%lf,%lf,%lf,Local(ENU),%lf,%lf,%lf\n", time, wpt, setpoint[0], setpoint[1], setpoint[2], local[0], local[1], local[2]);
-//    fclose(fp);
-// }
+void save_setpoint_local(const char *path, unsigned long long time, int wpt, std::vector<double> setpoint, std::vector<double> local)
+{
+   FILE *fp = fopen(path, "a+");
+   fprintf(fp, "%lld,<%d>,Setpoint,%lf,%lf,%lf,Local(ENU),%lf,%lf,%lf\n", time, wpt, setpoint[0], setpoint[1], setpoint[2], local[0], local[1], local[2]);
+   fclose(fp);
+}
+
 // void save_log(const char *path, int autopilot, double *llh, int *datetime, int mission_index)
 // {
 //     int i = 0;

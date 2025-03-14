@@ -24,7 +24,7 @@
     #define MISSION_ALT2 10
     #define MISSION_ALT3 30
     #define MISSION_RADIUS 50
-    #define PTURN_RADIUS 20
+    #define PTURN_RADIUS 30
     #define PTURN_DIRACTION CW
     #define CIRCLE_DIRECTION CCW
 #elif MISSION_NUMBER == HANAM // 하남

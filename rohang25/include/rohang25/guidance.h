@@ -2,7 +2,7 @@
 #define __GUIDANCE_H__
 
 //#include <px4_msgs/msg/vehicle_local_position.hpp>
-//#include <px4_msgs/msg/trajectory_setpoint.hpp>
+// #include <px4_msgs/msg/trajectory_setpoint.hpp>
 #include <math.h>
 
 #include "global_def.h"
@@ -15,4 +15,5 @@ std::vector<double> circle_guidance(std::vector<double> center, double radius, d
 std::vector<double> Pturn_guidance(std::vector<double> p1, std::vector<double> p2, std::vector<double> p3, double radius, std::vector<double> local, double step);
 // std::vector<double> obstacle_avoidance(std::vector<double> start, std::vector<double> end, std::vector<double> local, double step, std::vector<double> obstacle, double radius=-1);
 std::vector<double> corridor_alt(std::vector<double> start, std::vector<double> end, std::vector<double> local3);
+std::vector<double> velocity_guidance(std::vector<double> local, std::vector<double> setpoint);
 #endif

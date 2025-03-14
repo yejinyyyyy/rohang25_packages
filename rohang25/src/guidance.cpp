@@ -64,7 +64,7 @@ std::vector<double> circle_guidance(std::vector<double> center, double radius, d
         psi_s = - psi_s;
     }
     double psi_control = psi_vehicle + psi_s;
-    // ROS_INFO("guid angle: %f %f %f", psi_control, psi_vehicle, psi_s);
+    // RCLCPP_INFO(this->get_logger(), "guide angle: %f %f %f", psi_control, psi_vehicle, psi_s);
 
     // 0~360 deg to -180~180 deg
     if(psi_control > 2*M_PI) psi_control = psi_control - 2*M_PI;
@@ -153,4 +153,18 @@ std::vector<double> corridor_alt(std::vector<double> start, std::vector<double> 
     std::vector<double> current_line = mult_const(WPT_dist, 1/(norm(WPT_dist)*norm(WPT_dist))*dot(WPT_dist, start2curr));
 
     return current_line;
+}
+
+std::vector<double> velocity_guidance(std::vector<double> local, std::vector<double> setpoint)
+{
+    // Input: local(2D), setpoint(3D)
+    // Output: current position - setpoint unit vector * cruise speed 2D -> pose
+
+    std::vector<double> setpoint_2d = {setpoint[0], setpoint[1]}; 
+    double velocity = 17;  // cruise speed (assumed)
+    std::vector<double> v = eminus(setpoint_2d, local);
+    std::vector<double> unit = mult_const(v, 1/norm(v));  // u
+    std::vector<double> vel_vect = mult_const(unit, velocity);
+
+    return vel_vect;
 }

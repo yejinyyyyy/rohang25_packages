@@ -27,6 +27,14 @@ void set_altitude(px4_msgs::msg::TrajectorySetpoint &pose, double alt)
     pose.position[2] = alt;
 }
 
+void set_velocity(px4_msgs::msg::TrajectorySetpoint &pose, std::vector<double> vel)
+{
+    pose.velocity[0] = vel[1];
+    pose.velocity[1] = vel[0];
+    pose.velocity[2] = 0;
+}
+
+
 bool hold(double seconds) 
 {
     // 지정된 시간 재주는 타이머. 시간 지나고 호출되면 true 반환
@@ -121,7 +129,11 @@ bool is_arrived_verti(px4_msgs::msg::VehicleLocalPosition local, std::vector<dou
 // } // ----------------------> VehicleLocalPosition.heading or listener_callback_attitude
 
 bool is_arrived_direc(px4_msgs::msg::VehicleLocalPosition my_pos, double heading, double a_err)
-{
+{   
+    if(heading > M_PI){
+        heading = heading - 2*M_PI;
+    }
+
     double err = abs(my_pos.heading - heading);
     if(err > M_PI){
         err = 2*M_PI - err;

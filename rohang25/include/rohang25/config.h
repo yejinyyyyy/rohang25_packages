@@ -7,10 +7,10 @@
 // == 기본 설정 ==
 #define FRAME_MODE LLH
 #define ROS_FREQUENCY_HZ 10.0
-#define FILE_PATH "/home/yejiny/logs/ROS/wpt_time.csv"
-#define OUTPUT_FILE_PATH "/home/yejiny/logs/ROS/output.csv"
+#define FILE_PATH "/home/yejiny/log/ROS/wpt_time.csv"
+#define OUTPUT_FILE_PATH "/home/yejin/logs/ROS/output.csv"
 //#define LOG_FILE_PATH "/home/yejiny/logs/ROS/log.csv"
-#define SPT_FILE_PATH "/home/ubuntu/logs/ROS/setpoint.csv"
+#define SPT_FILE_PATH "/home/yejin/log/ROS/setpoint_local.csv"
 
 /* 
  * KONKUK_BIG_QUAD, KONKUK_SMALL_QUAD, HANAM, YANGPYEONG, GONGSA, INCHEON, OTHER
@@ -30,7 +30,7 @@
 // #define OBSTACLE_RANGE 3
 
 // 아래 특성은 이름 의미와는 달리 임의의 상수로, 실험적으로 찾아진 것
-#define FW_SPEED 10
+#define FW_SPEED 15
 #define MC_SPEED 3
 #define MIN_ROTATION_RADIUS 26
 #define CLIME_RATE 3

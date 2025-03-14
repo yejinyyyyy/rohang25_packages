@@ -2,7 +2,6 @@
 #include <px4_msgs/msg/trajectory_setpoint.hpp>
 #include <px4_msgs/srv/vehicle_command.hpp>
 #include <px4_msgs/msg/vehicle_local_position.hpp>
-//#include <px4_msgs/msg/vehicle_odometry.hpp>
 #include <px4_msgs/msg/airspeed.hpp>//
 #include <px4_msgs/msg/vehicle_attitude.hpp>//
 #include <px4_msgs/msg/sensor_gps.hpp>
@@ -107,7 +106,12 @@ public:
 			// }                         // temporary
 		}
 
-		RCLCPP_INFO(this->get_logger(), "\nMission Start =================== 0226 UPDATE\n");
+		RCLCPP_INFO(this->get_logger(), "\nMission Start =================== 0310 UPDATE\n");
+
+		/******************************
+		*  	Create Log file		  *
+		******************************/
+		create_file(SPT_FILE_PATH);
 
 	};
 	
@@ -187,6 +191,7 @@ private:
     std::vector<double> local;
     std::vector<double> local3;
     std::vector<double> set = {0, 0, 0};
+	std::vector<double> set_vel = {0, 0, 0};
 	double remain;
 	// std::vector<double> corr_alt;
 
@@ -338,7 +343,7 @@ void OffboardControl::publish_trajectory_setpoint()
 	/******************************
  	*   Local position Update	  *
  	******************************/
-	// local3 = {local_pose.x, local_pose.y, local_pose.z};
+	local3 = {local_pose.y, local_pose.x, -local_pose.z}; // ENU
 	set_position(pose, {local_pose.y, local_pose.x, -local_pose.z}); 
 
 	/******************************
@@ -428,16 +433,16 @@ void OffboardControl::publish_trajectory_setpoint()
 		// i=2;
 		#ifndef QUAD_MODE
 			// ================ Transition while flying ===================	
-			// start = {WPT[i-1][0], WPT[i-1][1]};
-			// end = {WPT[i][0], WPT[i][1]};
-			// local = {local_pose.pose.position.x, local_pose.pose.position.y};
-			// set = line_guidance(start, end, local, 13);
-			// set = {local_pose.pose.position.x + set[0], local_pose.pose.position.y + set[1], WPT[i][2]};
-			// set_position(pose, set);
+			start = {WPT[i-1][0], WPT[i-1][1]};
+			end = {WPT[i][0], WPT[i][1]};
+			local = {local_pose.y, local_pose.x};
+			set = line_guidance(local, end, local, 10);
+			set = {local_pose.y + set[0], local_pose.x + set[1], WPT[i][2]};
+			set_position(pose, set);
 
-			// if(hold_flag == false && hold(2))
-				//   hold_flag = true;
-			// if(hold_flag){
+			if(hold_flag == false && hold(2))
+				  hold_flag = true;
+			if(hold_flag){
 				do_vtol_transition();
 				if(state_ == State::transition_requested){
 					state_ = State::armed;
@@ -450,7 +455,7 @@ void OffboardControl::publish_trajectory_setpoint()
 					process++;
 				}
 				set_position(pose, WPT[i]);
-			//}
+			}
 			break;
 		#else
 			process++; //pass
@@ -463,10 +468,12 @@ void OffboardControl::publish_trajectory_setpoint()
 			start = {WPT[i-1][0], WPT[i-1][1]};
 			end = {WPT[i][0], WPT[i][1]};
 			local = {local_pose.y, local_pose.x};
-			set = line_guidance(start, end, local, step);
+			set = line_guidance(local, end, local, step);
 			set = {local_pose.y + set[0], local_pose.x + set[1], WPT[i][2]};
+			set_vel = velocity_guidance(local, set);
+			
 			set_position(pose, set);
-
+			set_velocity(pose, set_vel);
 
 			if(is_arrived_hori(local_pose, WPT[i], h_err) || is_increase_dist(remain_dist(local_pose, WPT[i]))){
 				RCLCPP_INFO(this->get_logger(), "================== Arrived at WPT2 ");
@@ -487,7 +494,10 @@ void OffboardControl::publish_trajectory_setpoint()
 			local = {local_pose.y, local_pose.x};
 			set = Pturn_guidance(WPT[i-1], WPT[i], WPT[i+1], PTURN_RADIUS, local, step);
 			set = {local_pose.y + set[0], local_pose.x + set[1], WPT[i][2]};
+			set_vel = velocity_guidance(local, set);
+			
 			set_position(pose, set);
+			set_velocity(pose, set_vel);
 
 			if(hold_flag == false && hold(1)){ // 3번 경로점을 충분히 지나갈 때까지 대기
 				hold_flag = true;
@@ -514,9 +524,12 @@ void OffboardControl::publish_trajectory_setpoint()
 			start = {WPT[i-1][0], WPT[i-1][1]};
 			end = {WPT[i][0], WPT[i][1]};
 			local = {local_pose.y, local_pose.x};
-			set = line_guidance(start, end, local, step);
+			set = line_guidance(local, end, local, step);
 			set = {local_pose.y + set[0], local_pose.x + set[1], WPT[i][2]};
+			set_vel = velocity_guidance(local, set);
+			
 			set_position(pose, set);
+			set_velocity(pose, set_vel);
 
 			if(is_arrived_hori(local_pose, WPT[i], h_err) || is_increase_dist(remain_dist(local_pose, WPT[i]))){
 				
@@ -539,11 +552,14 @@ void OffboardControl::publish_trajectory_setpoint()
 
 			local = {local_pose.y, local_pose.x};
 			set = Pturn_guidance(start, middle, end, 30, local, step);
-			set = {local_pose.y + set[0], local_pose.x + set[1], local_pose.z-3} ;
+			set = {local_pose.y + set[0], local_pose.x + set[1], -local_pose.z - CLIME_RATE} ; // set is NED, changed sign
 			if(set[2] < WPT[i+1][2] + 3){ 
 				set[2] = WPT[i+1][2];
 			}
+			set_vel = velocity_guidance(local, set);
+			
 			set_position(pose, set);
+			set_velocity(pose, set_vel);
 
 			if(hold_flag == false && hold(25)) // 3번 경로점을 충분히 지나갈 때까지 대기
 				hold_flag = true;
@@ -574,7 +590,10 @@ void OffboardControl::publish_trajectory_setpoint()
 			local = {local_pose.y, local_pose.x};
 			set = line_guidance(start, end, local, step);
 			set = {local_pose.y + set[0], local_pose.x + set[1], WPT[i][2]};  // 좌표로 고도 반영
+			set_vel = velocity_guidance(local, set);
+			
 			set_position(pose, set);
+			set_velocity(pose, set_vel);
 
 			if(is_arrived_hori(local_pose, WPT[i], h_err) || is_increase_dist(remain_dist(local_pose, WPT[i]))){
 				RCLCPP_INFO(this->get_logger(), "=================== Arrived at WPT4 ");  // 고도 조건 추가??
@@ -594,7 +613,10 @@ void OffboardControl::publish_trajectory_setpoint()
 			local = {local_pose.y, local_pose.x};
 			set = line_guidance(start, end, local, step);
 			set = {local_pose.y + set[0], local_pose.x + set[1], WPT[i][2]};
+			set_vel = velocity_guidance(local, set);
+			
 			set_position(pose, set);
+			set_velocity(pose, set_vel);
 
 			if(is_arrived_hori(local_pose, WPT[i], h_err) || is_increase_dist(remain_dist(local_pose, WPT[i]))){
 				RCLCPP_INFO(this->get_logger(), "================== Arrived at WPT5 "); // 고도 조건 추가??
@@ -614,8 +636,11 @@ void OffboardControl::publish_trajectory_setpoint()
 			end = {WPT[i][0], WPT[i][1]};
 			local = {local_pose.y, local_pose.x};
 			set = line_guidance(start, end, local, step);
-			set = {local_pose.y + set[0], local_pose.x + set[1], local_pose.z + CLIME_RATE};
+			set = {local_pose.y + set[0], local_pose.x + set[1], -local_pose.z + CLIME_RATE};
+			set_vel = velocity_guidance(local, set);
+			
 			set_position(pose, set);
+			set_velocity(pose, set_vel);
 
 			if(is_arrived_hori(local_pose, WPT[i], h_err) || is_increase_dist(remain_dist(local_pose, WPT[i]))){
 				RCLCPP_INFO(this->get_logger(), "================== Arrived at WPT6 "); // 고도 조건 추가??
@@ -636,11 +661,14 @@ void OffboardControl::publish_trajectory_setpoint()
 
 			local = {local_pose.y, local_pose.x};
 			set = Pturn_guidance(start, middle, end, 10, local, step);
-			set = {local_pose.y + set[0], local_pose.x + set[1], local_pose.z + CLIME_RATE};
+			set = {local_pose.y + set[0], local_pose.x + set[1], -local_pose.z + CLIME_RATE};
 			if(set[2] > WPT[i][2] - 5){ // 목표고도에 근접하면 상승률이 낮아지므로 목표고도 자체를 조금 더 높게 설정
 				set[2] = WPT[i][2];
 			}
+			set_vel = velocity_guidance(local, set);
+			
 			set_position(pose, set);
+			set_velocity(pose, set_vel);
 
 			if(hold_flag == false && hold(2)) // 3번 경로점을 충분히 지나갈 때까지 대기
 				hold_flag = true;
@@ -671,7 +699,10 @@ void OffboardControl::publish_trajectory_setpoint()
 			local = {local_pose.y, local_pose.x};
 			set = line_guidance(start, end, local, step);
 			set = {local_pose.y + set[0], local_pose.x + set[1], WPT[i][2]};
+			set_vel = velocity_guidance(local, set);
+			
 			set_position(pose, set);
+			set_velocity(pose, set_vel);
 
 			if(remain_dist(local_pose, WPT[i]) < BACK_TRANSITION_DIST){
 				RCLCPP_INFO(this->get_logger(), "================= Back Transition Start ");
@@ -756,7 +787,7 @@ void OffboardControl::publish_trajectory_setpoint()
 		// 		// Marker Detection?
 		// 	}
 
-		case 15: // Land
+		case 14: // Land
 			land();
 
 			if(service_done_)
@@ -777,7 +808,7 @@ void OffboardControl::publish_trajectory_setpoint()
 	// RCLCPP_INFO(this->get_logger(), "Setpoint: %.2f, %.2f, %.2f", set[0], set[1], set[2]);
 	// RCLCPP_INFO(this->get_logger(), "Remain Dist: %f, WPT#%d", remain, i);
 	// RCLCPP_INFO(this->get_logger(), "\n");
-	//save_setpoint_local(SPT_FILE_PATH, timestamp, i, set, local3);
+	save_setpoint_local(SPT_FILE_PATH, current_timestamp_, i, set, local3);
 
 	/******************************
  	*  Publish Setpoint           *
@@ -863,7 +894,8 @@ void OffboardControl::timer_callback(void){
 					"Timestamp: %ld\n"
 					"Current: %.2f, %.2f %.2f\n"
 					"Setpoint: %.2f, %.2f, %.2f\n"
-					"Current heading: %.2f/ Set heading: %.2f\n"
+					"Current heading: %.2f / Set heading: %.2f\n"
+					"Velocity setpoint:  %.2f, %.2f, %.2f\n"
 					"Remain Dist: %f, to WPT#%d\n"
 					"Case #%d\n"
 					// "Airspeed:\n"
@@ -876,6 +908,7 @@ void OffboardControl::timer_callback(void){
 					current_timestamp_, local_pose.x, local_pose.y, local_pose.z, 
 					pose.position[0], pose.position[1], pose.position[2],
 					current_heading_, DEF_R2D(heading),
+					pose.velocity[0], pose.velocity[1], pose.velocity[2],
 					remain, i, process
 					// current_indicated_airspeed_, current_true_airspeed_,
 					// current_roll_, current_pitch_, current_heading_,
