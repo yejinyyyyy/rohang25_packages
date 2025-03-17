@@ -1,3 +1,8 @@
+/*
+/ 2025 한국로봇항공기대회
+/ 건국대학교 ASEC
+*/
+
 #include <px4_msgs/msg/offboard_control_mode.hpp>
 #include <px4_msgs/msg/trajectory_setpoint.hpp>
 #include <px4_msgs/srv/vehicle_command.hpp>
@@ -79,7 +84,7 @@ public:
 		timer_ = this->create_wall_timer(100ms, std::bind(&OffboardControl::timer_callback, this));
 
 
-		RCLCPP_INFO(this->get_logger(), "\nMission Start =================== 0310 UPDATE\n");
+		RCLCPP_INFO(this->get_logger(), "\nMission Start =================== 0314 UPDATE\n");
 
 		/******************************
 		*  	Create Log file		  *
@@ -678,7 +683,7 @@ void OffboardControl::publish_trajectory_setpoint()
 
 			if(hold_flag2 == true){
 				if(is_arrived_direc(local_pose, get_angle(WPT[i], WPT[i+1]), a_err*2)){
-				RCLCPP_INFO(this->get_logger(), "=================== Arrived at switch point (WP6) "); // P턴 원 탈출 지점 도달
+				RCLCPP_INFO(this->get_logger(), "================ Arrived at switch point (WP6) "); // P턴 원 탈출 지점 도달
 
 				process++;
 				i++;
@@ -721,7 +726,7 @@ void OffboardControl::publish_trajectory_setpoint()
 			do_back_transition();
 
 			if(state_ == State::transition_requested){
-				state_ = State::flying;
+				state_ = State::armed;
 				current_flight_mode = MC;
 				step = MC_SPEED;
 				h_err = MC_HORIZONTAL_ERROR;
@@ -742,43 +747,40 @@ void OffboardControl::publish_trajectory_setpoint()
 			// 경로 유도 안함
 			// start = {WPT[i-1][0], WPT[i-1][1]};
 			// end = {WPT[i][0], WPT[i][1]};
-			// local = {local_pose.pose.position.x, local_pose.pose.position.y};
-			// set = line_guidance(start, end, local, step);
-			// set = {local_pose.pose.position.x + set[0], local_pose.pose.position.y + set[1], WPT[i][2]};
+			// local = {local_pose.y, local_pose.x};
+			// set = line_guidance(local, end, local, step);
+			// set = {local_pose.y + set[0], local_pose.x + set[1], WPT[i][2]};
 			// set_position(pose, set);
-
+		
 			set_position(pose, WPT[i]);
 			
-			if(is_arrived_hori(local_pose, WPT[i], h_err) && is_arrived_verti(local_pose, WPT[i], v_err)){
+			if(is_arrived_hori(local_pose, WPT[i], h_err) && is_arrived_verti(local_pose, WPT[i], v_err) || is_increase_dist(remain_dist(local_pose, WPT[i]))){
 				
 				set_position(pose, WPT[i]);
 
-				if(hold_flag == false && hold(2))
+				if(hold_flag == false && hold(2)){
 					hold_flag = true;
+					RCLCPP_INFO(this->get_logger(), "================ Arrived at WPT7 ");
+				}
 
-				if(hold_flag){
+				if(hold_flag ==  true){
 					start = {WPT[i][0], WPT[i][1]};
 					end = {WPT[0][0], WPT[0][1]};
 					heading = get_angle(start, end);
 					set_heading(pose, heading);  // base로 헤딩 고정
 					
 					if(is_arrived_direc(local_pose, heading, a_err)){ 
-						if(hold_flag2 == false && hold(HOLD_TIME)) // 3
-							hold_flag2 = true; 
-							
-						if(hold_flag2){
-							RCLCPP_INFO(this->get_logger(), "=================== Arrived at WPT7 ");
-							process++;
-							i++;
-							
-							hold_flag = false;
-							hold_flag2 = false;
+						RCLCPP_INFO(this->get_logger(), "Ready to Land ============= ");
+						process++;
+						i++;
+						
+						hold_flag = false;
+						hold_flag2 = false;
 
-						//    save_timestamp(FILE_PATH, log_index++, timestamp); // 19: arrived at WPT7
-						//    save_timestamp(FILE_PATH, log_index++, timestamp); // 20: enter Corridor
-						}
+					//    save_timestamp(FILE_PATH, log_index++, timestamp); // 19: arrived at WPT7
+					//    save_timestamp(FILE_PATH, log_index++, timestamp); // 20: enter Corridor
 					}
-				}  
+				}
 			}
 			break;
 
@@ -868,6 +870,7 @@ void OffboardControl::timer_callback(void){
 			}
 		}
 		break;
+
 	default:
 		break;
 	}
