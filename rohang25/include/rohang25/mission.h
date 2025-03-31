@@ -68,6 +68,15 @@
     #define MISSION_RADIUS 0 // not use
     #define CIRCLE_DIRECTION 0 // not use
 
+#elif MISSION_NUMBER == SACHEON // 
+    #define MISSION_ALT1 50
+    #define MISSION_ALT2 50
+    #define MISSION_ALT3 50
+    #define MISSION_RADIUS 50
+    #define PTURN_RADIUS 30
+    #define PTURN_DIRACTION CW
+    #define CIRCLE_DIRECTION CCW
+
 #else // 임시
     #define MISSION_ALT1 40
     #define MISSION_ALT2 90
@@ -179,6 +188,19 @@ std::vector<std::vector<double>> WPT = {
     {36.659412, 126.344157, MISSION_ALT3},  // WPT#6
     {36.660226, 126.342404, MISSION_ALT3},  // WPT#7
     {36.660854, 126.341925, 5} // base
+
+#elif MISSION_NUMBER == SACHEON //사천
+    // 012
+    {35.0688773, 128.0864906, MISSION_ALT1}, // base
+    {35.0687931, 128.0865277, MISSION_ALT1}, // WPT#1
+    {35.0685205, 128.0869303, MISSION_ALT1}, // WPT#2
+    {35.0675394, 128.0872670, MISSION_ALT1}, // WPT#3
+    {35.0683686, 128.0881632, MISSION_ALT2}, // WPT#4
+    {35.0685205, 128.0869303, MISSION_ALT2}, // WPT#5
+    {35.0691603, 128.0869242, MISSION_ALT3},  // WPT#6
+    {35.0684781, 128.0862252, MISSION_ALT3},  // WPT#7
+    {35.0688773, 128.0864906, 5} // base
+
 #else
     // 임시용
     {36.5805664, 127.5277605, MISSION_ALT1}, // base

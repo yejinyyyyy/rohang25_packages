@@ -11,11 +11,11 @@ find_package(builtin_interfaces REQUIRED)
 #find_package(eigen3_cmake_module REQUIRED)
 #find_package(Eigen3 REQUIRED)
 find_package(geometry_msgs REQUIRED)
-find_package(mavros_msgs REQUIRED)
 find_package(px4_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(rclpy REQUIRED)
+find_package(mavros_msgs REQUIRED)
 
 include_directories(include)
 
@@ -23,14 +23,14 @@ add_library(CONTROL SHARED src/control.cpp)
 ament_target_dependencies(CONTROL px4_msgs rclcpp)
 target_include_directories(CONTROL PUBLIC
 	$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/${PROJECT_NAME}>
-	#$<INSTALL_INTERFACE:include/${PROJECT_NAME}>
+	$<INSTALL_INTERFACE:include/${PROJECT_NAME}>
 )
 
 add_library(LOG SHARED src/log.cpp)
 ament_target_dependencies(LOG px4_msgs rclcpp mavros_msgs)
 target_include_directories(LOG PUBLIC
 	$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/${PROJECT_NAME}>
-	#$<INSTALL_INTERFACE:include/${PROJECT_NAME}>
+	$<INSTALL_INTERFACE:include/${PROJECT_NAME}>
 )
 
 
@@ -52,17 +52,17 @@ target_link_libraries(offboard_control CONTROL)
 target_link_libraries(offboard_control LOG)
 target_include_directories(CUSTOMLIB PUBLIC
 	$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/${PROJECT_NAME}>
-	#$<INSTALL_INTERFACE:include/${PROJECT_NAME}>
+	$<INSTALL_INTERFACE:include/${PROJECT_NAME}>
 )
 
 target_include_directories(CONTROL PUBLIC
 	$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/${PROJECT_NAME}>
-	#$<INSTALL_INTERFACE:include/${PROJECT_NAME}>
+	$<INSTALL_INTERFACE:include/${PROJECT_NAME}>
 )
 
 target_include_directories(LOG PUBLIC
 	$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/${PROJECT_NAME}>
-	#$<INSTALL_INTERFACE:include/${PROJECT_NAME}>
+	$<INSTALL_INTERFACE:include/${PROJECT_NAME}>
 )
 
 

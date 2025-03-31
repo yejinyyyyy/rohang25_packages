@@ -21,6 +21,7 @@
 #define LIDAR_TEST          9
 #define CORRIDOR_TEST       10
 #define TAEAN               11
+#define SACHEON             12
 #define OTHER               -1
 
 #define LLH 0
