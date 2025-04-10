@@ -92,7 +92,6 @@ public:
 		create_file(SPT_FILE_PATH);
 
 	};
-	
 
 	void switch_to_offboard_mode();
 	void arm();
@@ -227,7 +226,8 @@ void OffboardControl::land()
 {
 	RCLCPP_INFO(this->get_logger(), "requesting AUTO LAND");
 	request_vehicle_command(VehicleCommand::VEHICLE_CMD_NAV_LAND);
-	state_ = State::land_requested;}
+	state_ = State::land_requested;
+}
 
 /**
  * @brief Set control mode (*position control)

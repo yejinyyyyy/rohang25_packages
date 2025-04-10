@@ -209,7 +209,7 @@ int main(int argc, char* argv[])
 	Eigen::Matrix3d R_body_to_ned;
 	
 
-	std::string HeliPad_label("HeliPad");
+	std::string HeliPad_label("HeliPad"); // ?
 
 
 	float altitude;
@@ -275,7 +275,7 @@ int main(int argc, char* argv[])
 			//std::cout<<"Update!!"<<std::endl;
 
 
-			std::vector<Eigen::Matrix<double, 3, 1>> init_vector_set;
+			std::vector<Eigen::Matrix<double, 3, 1>> init_vector_set; // moved to top
 			std::cout<<"rpy_msg :: "<<fcc_rpy_msg<<std::endl;
 			std::cout<<"---------------"<<std::endl;
 			std::cout<<"CNNDetection info :: "<<CNNDetectionList_ws<<std::endl;
@@ -290,7 +290,7 @@ int main(int argc, char* argv[])
 				///////////////////////////////////////////////////////////////////////////////////////////////////////
 				///////////////////////////////////////////// fcc data 0812 //////////////////////////////////////////////
 				
-				double roll_fcc = fcc_rpy_msg.x * deg2rad;
+				double roll_fcc = fcc_rpy_msg.x * deg2rad;	// No need
 				double pitch_fcc = fcc_rpy_msg.y* deg2rad;
 				double yaw_fcc = fcc_rpy_msg.z* deg2rad; 
 
@@ -300,7 +300,7 @@ int main(int argc, char* argv[])
 				std::cout<<"depth_f       ::    "<<depth_f<<std::endl;
 
 				////// gimbal euler state   ///////////////
-				double roll_gimbal_f =0.0;
+				double roll_gimbal_f =0.0;  // moved to top
 				double pitch_gimbal_f = -3.141592/2;//0.0; //3.141592/2; // 90 deg -  FRD Frame 
 				double yaw_gimbal_f = 0.0;
 				
