@@ -44,8 +44,7 @@ public:
 		current_indicated_airspeed_(0.0f), current_true_airspeed_(0.0f),
 		current_roll_(0.0f), current_pitch_(0.0f), current_yaw_(0.0f), current_heading_(0.0f),
 		current_latitude_(0.0f), current_longitude_(0.0f), current_altitude_(0.0f), state_{State::init},
-		service_result_{0}, service_done_{false}, 
-		vehicle_command_client_{this->create_client<px4_msgs::srv::VehicleCommand>(px4_namespace+"vehicle_command")}
+		service_result_{0}, service_done_{false}
 	{
 		rmw_qos_profile_t qos_profile = rmw_qos_profile_sensor_data;
 		qos_profile.history = RMW_QOS_POLICY_HISTORY_KEEP_LAST;
@@ -71,6 +70,8 @@ public:
 		subscription_sensor_gps = this->create_subscription<SensorGps>(
 		    "/fmu/out/vehicle_gps_position", qos,
 		    [this](const SensorGps::SharedPtr msg) { this->listener_callback_gps(msg); });
+
+		vehicle_command_client_{this->create_client<px4_msgs::srv::VehicleCommand>(px4_namespace+"vehicle_command")};
 
 		RCLCPP_INFO_STREAM(this->get_logger(), "Waiting for " << px4_namespace << "vehicle_command service");
 		while (!vehicle_command_client_->wait_for_service(1s)) {
@@ -279,6 +280,11 @@ void OffboardControl::request_vehicle_command(uint16_t command, float param1, fl
 void OffboardControl::listener_callback_local_position(const VehicleLocalPosition::SharedPtr msg)
 {
 	local_pose = *msg;
+
+	current_heading_ = msg->heading * (180.0f / M_PI);
+	if (current_heading_ < 0) {
+		current_heading_ += 360.0f;
+	}
 }
 
 void OffboardControl::listener_callback_airspeed(const Airspeed::SharedPtr msg)
@@ -290,22 +296,22 @@ void OffboardControl::listener_callback_airspeed(const Airspeed::SharedPtr msg)
 	current_true_airspeed_ = msg->true_airspeed_m_s;
 }
 
-void OffboardControl::listener_callback_attitude(const VehicleAttitude::SharedPtr msg)
-{
-	float w = msg->q[0];
-	float x = msg->q[1];
-	float y = msg->q[2];
-	float z = msg->q[3];
+// void OffboardControl::listener_callback_attitude(const VehicleAttitude::SharedPtr msg)
+// {
+// 	float w = msg->q[0];
+// 	float x = msg->q[1];
+// 	float y = msg->q[2];
+// 	float z = msg->q[3];
 
-	current_roll_  = std::atan2(2.0f * (w * x + y * z), 1.0f - 2.0f * (x * x + y * y));
-	current_pitch_ = std::asin(2.0f * (w * y - z * x));
-	current_yaw_   = std::atan2(2.0f * (w * z + x * y), 1.0f - 2.0f * (y * y + z * z));
+// 	current_roll_  = std::atan2(2.0f * (w * x + y * z), 1.0f - 2.0f * (x * x + y * y));
+// 	current_pitch_ = std::asin(2.0f * (w * y - z * x));
+// 	current_yaw_   = std::atan2(2.0f * (w * z + x * y), 1.0f - 2.0f * (y * y + z * z));
 
-	current_heading_ = current_yaw_ * (180.0f / M_PI);
-	if (current_heading_ < 0) {
-		current_heading_ += 360.0f;
-	}
-}
+// 	current_heading_ = current_yaw_ * (180.0f / M_PI);
+// 	if (current_heading_ < 0) {
+// 		current_heading_ += 360.0f;
+// 	}
+// }
 
 void OffboardControl::listener_callback_gps(const SensorGps::SharedPtr msg)
 {
