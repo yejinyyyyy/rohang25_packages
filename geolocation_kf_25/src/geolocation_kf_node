@@ -77,7 +77,7 @@ public:
 
 		subscription_geo_node_control_flag = this->create_subscription<std_msgs::msg::Int32>(
 			"/geo_node_control_flag", qos,
-			[this](const std_msgs::msg::Int32::ConstSharedPtr msg) { this->listener_callback_geo_node_control_flag(msg); });
+			[this](const std_msgs::msg::Bool::ConstSharedPtr msg) { this->listener_callback_geo_node_control_flag(msg); });
 		
 		subscription_ref_position = this->create_subscription<geometry_msgs::msg::Point>(
 			"/object_ref_position", qos,  // Check Publisher
@@ -102,7 +102,7 @@ private:
 	rclcpp::Publisher<geometry_msgs::msg::Point>::SharedPtr object_lla_publisher_;
 	rclcpp::Publisher<geometry_msgs::msg::Point>::SharedPtr object_ned_publisher_;
 	rclcpp::Publisher<geometry_msgs::msg::Point>::SharedPtr object_raw_publisher_;
-	rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr kf_data_valid_flag_publisher_;
+	rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr kf_data_valid_flag_publisher_;
 
 	// Subscribers
 	rclcpp::Subscription<px4_msgs::msg::VehicleLocalPosition>::SharedPtr subscription_local_position;
@@ -110,7 +110,7 @@ private:
 	rclcpp::Subscription<px4_msgs::msg::SensorGps>::SharedPtr subscription_sensor_gps;
 	rclcpp::Subscription<geometry_msgs::msg::Point32>::SharedPtr subscription_yolo_center;
 	rclcpp::Subscription<geometry_msgs::msg::Point32>::SharedPtr subscription_yolo_box;
-	rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr subscription_geo_node_control_flag;
+	rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr subscription_geo_node_control_flag;
 	rclcpp::Subscription<geometry_msgs::msg::Point>::SharedPtr subscription_ref_position;
 
 	// Timer
@@ -124,7 +124,7 @@ private:
 	void listener_callback_gps(const SensorGps::ConstSharedPtr msg);
 	void listener_callback_yolo_center(const geometry_msgs::msg::Point32::ConstSharedPtr msg);
 	void listener_callback_yolo_box(const geometry_msgs::msg::Point32::ConstSharedPtr msg);
-	void listener_callback_geo_node_control_flag(const std_msgs::msg::Int32::ConstSharedPtr msg);
+	void listener_callback_geo_node_control_flag(const std_msgs::msg::Bool::ConstSharedPtr msg);
 	void listener_callback_ref_position(const geometry_msgs::msg::Point::ConstSharedPtr msg);
 	
 	void publish_object_data();  // Publishes all data at once
@@ -153,8 +153,8 @@ private:
 	geometry_msgs::msg::Point object_ned_msg;
 	geometry_msgs::msg::Point object_raw_msg;	
 
-	std_msgs::msg::Int32 geo_node_control_flag;
-	std_msgs::msg::Int32 kf_data_valid_flag_msg;	
+	std_msgs::msg::Bool geo_node_control_flag;
+	std_msgs::msg::Bool kf_data_valid_flag_msg;	
 
 	// Trim value  -- all needs to be set
 	float x_trim = 0.0;	
@@ -291,7 +291,7 @@ void Geolocation_KF::listener_callback_yolo_box(const geometry_msgs::msg::Point3
 	ObjDetection_box = *msg
 }
 
-void Geolocation_KF::listener_callback_geo_node_control_flag(const std_msgs::msg::Int32::ConstSharedPtr msg)
+void Geolocation_KF::listener_callback_geo_node_control_flag(const std_msgs::msg::Bool::ConstSharedPtr msg)
 {
 	geo_node_control_flag = *msg;
 }
