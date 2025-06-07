@@ -4,7 +4,7 @@
 /
 / Code for Mission Testing
 / 
-/ Last edit date : 250605
+/ Last edit date : 250607 (Build complete)
 */
 
 #include <px4_msgs/msg/offboard_control_mode.hpp>
@@ -14,7 +14,11 @@
 #include <px4_msgs/msg/airspeed.hpp>//
 #include <px4_msgs/msg/vehicle_attitude.hpp>//
 #include <px4_msgs/msg/sensor_gps.hpp>
+#include <geometry_msgs/msg/point32.hpp>
+#include <std_msgs/msg/bool.hpp>
 #include <rclcpp/rclcpp.hpp>
+
+#include "rohang25_test/srv/set_guidance_param.hpp"
 
 #include <math.h>
 #include <stdio.h>
@@ -34,11 +38,11 @@
 #include "guidance.h"
 #include "mission.h"
 #include "log.h"
-#include "guidance/guidance_param.h"
 
 using namespace std::chrono;
 using namespace std::chrono_literals;
 using namespace px4_msgs::msg;
+using rohang25_test::srv::SetGuidanceParam;
 using std::placeholders::_1;
 using std::placeholders::_2;
 
@@ -73,9 +77,9 @@ public:
 		    "/fmu/out/airspeed", qos,
 		    [this](const Airspeed::SharedPtr msg) { this->listener_callback_airspeed(msg); });
 
-		subscription_vehicle_attitude = this->create_subscription<VehicleAttitude>(
-		    "/fmu/out/vehicle_attitude", qos,
-		    [this](const VehicleAttitude::SharedPtr msg) { this->listener_callback_attitude(msg); });
+		// subscription_vehicle_attitude = this->create_subscription<VehicleAttitude>(
+		//     "/fmu/out/vehicle_attitude", qos,
+		//     [this](const VehicleAttitude::SharedPtr msg) { this->listener_callback_attitude(msg); });
 
 		subscription_sensor_gps = this->create_subscription<SensorGps>(
 		    "/fmu/out/vehicle_gps_position", qos,
@@ -89,11 +93,11 @@ public:
 			"/mission_flag", qos,
 			[this](const std_msgs::msg::Bool::SharedPtr msg) { this->listener_callback_mission_flag(msg); });
 		
-		param_service_ = node_->create_service<guidance::srv::SetGuidanceParam>(
+		param_service_ = this->create_service<SetGuidanceParam>(
 			"/guidance_param",
-			std::bind(&guidance_param::srv_callback_paramUpdate, this, _1, _2));
+			std::bind(&OffboardControl::srv_callback_paramUpdate, this, _1, _2));
 
-		vehicle_command_client_{this->create_client<px4_msgs::srv::VehicleCommand>(px4_namespace+"vehicle_command")};
+		vehicle_command_client_ = this->create_client<px4_msgs::srv::VehicleCommand>(px4_namespace+"vehicle_command");
 
 		RCLCPP_INFO_STREAM(this->get_logger(), "Waiting for " << px4_namespace << "vehicle_command service");
 		while (!vehicle_command_client_->wait_for_service(1s)) {
@@ -106,6 +110,17 @@ public:
 
 		timer_ = this->create_wall_timer(100ms, std::bind(&OffboardControl::timer_callback, this));
 
+		// Initialize parameter values	
+		param[0] = 0.0;   // control type - 0: PIXEL, 1: NED axis
+		param[1] = 640.0; // goal position - X axis or North axis
+		param[2] = 360.0; // goal position - Y axis or East axis
+		param[3] = 0.01;  // p gain - X or North axis
+		param[4] = 0.01;  // p gain - Y or East axis
+		param[5] = 3.0;   // velocity saturation
+		param[6] = 0.5;   // down velocity
+		param[7] = 0.0;
+		param[8] = 0.0;
+		param[9] = 0.0;
 
 		RCLCPP_INFO(this->get_logger(), "\nMission Start =================== 0314 UPDATE\n");
 
@@ -123,22 +138,10 @@ public:
 	void do_back_transition();
 	void land();
 
-	double_t param[10]; // Precise landing guidance parameters
-	// Initialize parameter values	
-	param[0] = 0.0;   // control type - 0: PIXEL, 1: NED axis
-	param[1] = 640.0; // goal position - X axis or North axis
-	param[2] = 360.0; // goal position - Y axis or East axis
-	param[3] = 0.01;  // p gain - X or North axis
-	param[4] = 0.01;  // p gain - Y or East axis
-	param[5] = 3.0;   // velocity saturation
-	param[6] = 0.5;   // down velocity
-	param[7] = 0.0;
-	param[8] = 0.0;
-	param[9] = 0.0;
 
 private:
 
-	rclcpp::Service<guidance::srv::SetGuidanceParam>::SharedPtr param_service_;
+	rclcpp::Service<SetGuidanceParam>::SharedPtr param_service_;
 
 	rclcpp::Client<px4_msgs::srv::VehicleCommand>::SharedPtr vehicle_command_client_;
 
@@ -149,7 +152,7 @@ private:
 
 	rclcpp::Subscription<VehicleLocalPosition>::SharedPtr subscription_local_position;
 	rclcpp::Subscription<Airspeed>::SharedPtr subscription_airspeed;
-	rclcpp::Subscription<VehicleAttitude>::SharedPtr subscription_vehicle_attitude;
+	// rclcpp::Subscription<VehicleAttitude>::SharedPtr subscription_vehicle_attitude;
 	rclcpp::Subscription<SensorGps>::SharedPtr subscription_sensor_gps;
 	rclcpp::Subscription<geometry_msgs::msg::Point32>::SharedPtr subscription_object_ned;
 	rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr subscription_mission_flag;
@@ -188,7 +191,7 @@ private:
 
 	VehicleLocalPosition local_pose{}; // local position -> subscribed
 	TrajectorySetpoint pose{};  	   // local position -> to be published
-	static geometry_msgs::msg::Point32  current_object_ned{}; // subscribed object ned
+	geometry_msgs::msg::Point32  current_object_ned; // subscribed object ned
 
 	int process = 0;
     int i = 0;
@@ -200,6 +203,7 @@ private:
 	bool geo_node_control_flag = false;
 	bool gimbal_node_control_flag = false;	
 	bool mission_flag = false; 
+	bool detection_flag = false;
 
     float step = MC_SPEED;
     double h_err = MC_HORIZONTAL_ERROR;
@@ -216,25 +220,27 @@ private:
     std::vector<double> set = {0, 0, 0};
 	std::vector<double> set_vel = {0, 0, 0};
 	double remain;
-	// std::vector<double> corr_alt;
+
+	double_t param[10]; // Precise landing guidance parameters
 
 	void request_vehicle_command(uint16_t command, float param1 = 0.0f, float param2 = 0.0f);
 	void response_callback(rclcpp::Client<px4_msgs::srv::VehicleCommand>::SharedFuture future);
 	void srv_callback_paramUpdate(
-        const std::shared_ptr<guidance::srv::SetGuidanceParam::Request> request,
-        std::shared_ptr<guidance::srv::SetGuidanceParam::Response> response);
+        const std::shared_ptr<SetGuidanceParam::Request> request,
+        std::shared_ptr<SetGuidanceParam::Response> response);
 	void timer_callback(void);
 
-	void publish_offboard_control_mode(bool control_mode);
+	void publish_offboard_control_mode();
 	void publish_trajectory_setpoint();
 	void publish_vehicle_command(uint16_t command, float param1 = 0.0f, float param2 = 0.0f);
 	void publish_node_control_flag();
 	
 	void listener_callback_local_position(const VehicleLocalPosition::SharedPtr msg);
 	void listener_callback_airspeed(const Airspeed::SharedPtr msg);
-	void listener_callback_attitude(const VehicleAttitude::SharedPtr msg);
+	// void listener_callback_attitude(const VehicleAttitude::SharedPtr msg);
 	void listener_callback_gps(const SensorGps::SharedPtr msg);
 	void listener_callback_object_ned(const geometry_msgs::msg::Point32::SharedPtr msg);
+	void listener_callback_mission_flag(const std_msgs::msg::Bool::SharedPtr msg);
 };
 
 /**
@@ -316,20 +322,20 @@ void OffboardControl::request_vehicle_command(uint16_t command, float param1, fl
 /**
  * @brief Service callback function (Server)
  */
-void guidance_param::callback_paramUpdate(
-	const std::shared_ptr<guidance::srv::SetGuidanceParam::Request> request,
-	std::shared_ptr<guidance::srv::SetGuidanceParam::Response> response)
+void OffboardControl::srv_callback_paramUpdate(
+	const std::shared_ptr<SetGuidanceParam::Request> request,
+	std::shared_ptr<SetGuidanceParam::Response> response)
   {
 	uint8_t idx = request->index;
 	double val = request->value;
 	if (idx < 10) {
 	  param[idx] = val;
 	  response->success = true;
-	  RCLCPP_INFO(node_->get_logger(), "[GUIDANCE] param[%u] set to %.3f", idx, val);
+	  RCLCPP_INFO(this->get_logger(), "[GUIDANCE] param[%u] set to %.3f", idx, val);
 	} 
 	else {
 	  response->success = false;
-	  RCLCPP_WARN(node_->get_logger(), "[GUIDANCE] invalid index %u", idx);
+	  RCLCPP_WARN(this->get_logger(), "[GUIDANCE] invalid index %u", idx);
 	}
   }
 
@@ -421,7 +427,7 @@ void OffboardControl::listener_callback_mission_flag(const std_msgs::msg::Bool::
 /**
  * @brief Set control mode 
  */
- void OffboardControl::publish_offboard_control_mode(bool control_mode)
+ void OffboardControl::publish_offboard_control_mode()
  {
 	 OffboardControlMode msg{};
 	 msg.position = control_mode[0];
@@ -475,8 +481,8 @@ void OffboardControl::publish_trajectory_setpoint()
 				if (hold_flag == false)
     				hold_flag = true;
 				if(hold_flag){
-					================  set heading towards WP1 ===================
-					start = {local_pose.pose.position.x,local_pose.pose.position.y};
+					// ================  set heading towards WP1 ===================
+					start = {local_pose.x,local_pose.y};
 					end = {WPT[i][0], WPT[i][1]};
 					heading = get_angle({WPT[i+1][0], WPT[i+1][1]}, {WPT[i+2][0], WPT[i+2][1]});
 					set_heading(pose, heading);
@@ -528,8 +534,9 @@ void OffboardControl::publish_trajectory_setpoint()
 			if(detection_flag == true){
 				RCLCPP_INFO(this->get_logger(), "================== Detected Marker, Start Landing");
 				
-				control_mode = {false, true, false}; // position control off, velocity control on, attitude control off
-				set = {NaN, NaN, NaN}; 
+				control_mode[0] = false; // position control off, velocity control on, attitude control off
+				control_mode[1] = true;
+				set = {NAN, NAN, NAN}; 
 				set_vel = precise_landing_guidance(param, current_heading_, current_object_ned);
 				set_position(pose, set);
 				set_velocity(pose, set_vel);
@@ -571,8 +578,9 @@ void OffboardControl::publish_trajectory_setpoint()
 			if(detection_flag == true){
 				RCLCPP_INFO(this->get_logger(), "================== Detected Target, Approaching");
 				
-				control_mode = {false, true, false}; // position control off, velocity control on, attitude control off
-				set = {NaN, NaN, NaN}; 
+				control_mode[0] = false; // position control off, velocity control on, attitude control off
+				control_mode[1] = true;				
+				set = {NAN, NAN, NAN}; 
 				set_vel = precise_landing_guidance(param, current_heading_, current_object_ned);
 				set_position(pose, set);
 				set_velocity(pose, set_vel);
@@ -587,7 +595,8 @@ void OffboardControl::publish_trajectory_setpoint()
 						process++;
 						detection_flag = false;
 						mission_flag = false;
-						control_mode = {true, false, false};
+						control_mode[0] = true; // position control on
+						control_mode[1] = false; // velocity control off
 
 					}
 				}
@@ -657,13 +666,14 @@ void OffboardControl::publish_trajectory_setpoint()
 			break;
 
 
-		case 7: // Relase Target
+		case 6: // Relase Target
 			// i=2; WPT#2
 			if(detection_flag == true){
 				RCLCPP_INFO(this->get_logger(), "================== Detected Marker, Approaching");
 				
-				control_mode = {false, true, false};
-				set = {NaN, NaN, NaN}; 
+				control_mode[0] = false; // position control on
+				control_mode[1] = true; // velocity control off
+				set = {NAN, NAN, NAN}; 
 				set_vel = precise_landing_guidance(param, current_heading_, current_object_ned);
 				set_position(pose, set);
 				set_velocity(pose, set_vel);
@@ -678,7 +688,8 @@ void OffboardControl::publish_trajectory_setpoint()
 						detection_flag = false;
 						mission_flag = false;
 						process++;
-						control_mode = {true, false, false};
+						control_mode[0] = true; // position control on
+						control_mode[1] = false; // velocity control off					}
 					}
 				}
 			}
@@ -703,7 +714,7 @@ void OffboardControl::publish_trajectory_setpoint()
 			break;
 
 
-		case 8: // Return to WPT2
+		case 7: // Return to WPT2
 			// i=2; WPT#2
 
 			// start = {WPT[i-1][0], WPT[i-1][1]};
@@ -724,7 +735,7 @@ void OffboardControl::publish_trajectory_setpoint()
 			break;
 
 
-		case 9: // to WPT3 (Vertiport)
+		case 8: // to WPT3 (Vertiport)
 			// i=3; WPT#3
 			start = {WPT[i-1][0], WPT[i-1][1]};
 			end = {WPT[i][0], WPT[i][1]};
@@ -744,14 +755,15 @@ void OffboardControl::publish_trajectory_setpoint()
 			break;
 			
 
-		case 10: // Precise Landing
+		case 9: // Precise Landing
 			// i=3; WPT#3
 
 			if(detection_flag == true){
 				RCLCPP_INFO(this->get_logger(), "================== Detected Marker, Start Landing");
 				
-				control_mode = {false, true, false};
-				set = {NaN, NaN, NaN}; 
+				control_mode[0] = false; // position control on
+				control_mode[1] = true; // velocity control off
+				set = {NAN, NAN, NAN}; 
 				set_vel = precise_landing_guidance(param, current_heading_, current_object_ned);
 				set_position(pose, set);
 				set_velocity(pose, set_vel);
@@ -877,8 +889,8 @@ void OffboardControl::timer_callback(void){
 					"Timestamp: %ld\n"
 					"Current: %.2f, %.2f %.2f\n"
 					"Setpoint: %.2f, %.2f, %.2f\n"
-					"Current heading: %.2f / Set heading: %.2f\n"
 					"Velocity setpoint:  %.2f, %.2f, %.2f\n"
+					"Current heading: %.2f / Set heading: %.2f\n"
 					"Remain Dist: %f, to WPT#%d\n"
 					"Case #%d\n"
 					// "Airspeed:\n"

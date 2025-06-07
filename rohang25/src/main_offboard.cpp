@@ -71,7 +71,7 @@ public:
 		    "/fmu/out/vehicle_gps_position", qos,
 		    [this](const SensorGps::SharedPtr msg) { this->listener_callback_gps(msg); });
 
-		vehicle_command_client_{this->create_client<px4_msgs::srv::VehicleCommand>(px4_namespace+"vehicle_command")};
+		vehicle_command_client_ = this->create_client<px4_msgs::srv::VehicleCommand>(px4_namespace+"vehicle_command");
 
 		RCLCPP_INFO_STREAM(this->get_logger(), "Waiting for " << px4_namespace << "vehicle_command service");
 		while (!vehicle_command_client_->wait_for_service(1s)) {

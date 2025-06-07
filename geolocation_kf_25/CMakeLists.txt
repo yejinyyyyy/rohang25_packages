@@ -7,8 +7,37 @@ endif()
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
+find_package(builtin_interfaces REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(px4_msgs REQUIRED)
+find_package(rclpy REQUIRED)
+find_package(Eigen3 REQUIRED)
+
+include_directories(include)
+
+add_library(CONTROL SHARED src/control.cpp)
+ament_target_dependencies(CONTROL px4_msgs rclcpp)
+target_include_directories(CONTROL PUBLIC
+	$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/${PROJECT_NAME}>
+	$<INSTALL_INTERFACE:include/${PROJECT_NAME}>
+)
+
+add_library(LOG SHARED src/log.cpp)
+ament_target_dependencies(LOG px4_msgs rclcpp mavros_msgs)
+target_include_directories(LOG PUBLIC
+	$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/${PROJECT_NAME}>
+	$<INSTALL_INTERFACE:include/${PROJECT_NAME}>
+)
+
+
+
+add_library(CUSTOMLIB SHARED
+    src/algebra.cpp
+    src/frame.cpp
+    src/guidance.cpp
+)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)

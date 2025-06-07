@@ -169,24 +169,25 @@ std::vector<double> velocity_guidance(std::vector<double> local, std::vector<dou
     return vel_vect;
 }
 
-geometry_msgs::msg::Point32 vel_saturation(const geometry_msgs::msg::Point32 &in, double sat)
+std::vector<double> vel_saturation(const geometry_msgs::msg::Point32 &in, double sat)
 {
-    geometry_msgs::msg::Point3s2 out;
+    std::vector<double> out;
     float lim = static_cast<float>(sat);
-    out.x = std::clamp(in.x, -lim, lim);
-    out.y = std::clamp(in.y, -lim, lim);
-    out.z = in.z;
+    out[0] = std::clamp(in.x, -lim, lim);
+    out[1] = std::clamp(in.y, -lim, lim);
+    out[2] = in.z;
     return out;
 }
 
-geometry_msgs::msg::Point32 precise_landing_guidance(double_t* param, double heading, geometry_msgs::msg::Point32 object_pos)
+std::vector<double> precise_landing_guidance(double_t* param, double heading, geometry_msgs::msg::Point32 object_pos)
 {
     // Input: Parameter array, current heading, object position(NED)
     // Output: NED Setpoint for precise landing
 
     // Read mode and params
     double mode = param[0];
-    geometry_msgs::msg::Point32 temp_cmd{}, temp_ned{}, cmd_ned{};
+    geometry_msgs::msg::Point32 temp_cmd{}, temp_ned{};
+    std::vector<double> cmd_ned;
 
     if (mode == 0.0) {
         // Pixel-based control
@@ -215,7 +216,7 @@ geometry_msgs::msg::Point32 precise_landing_guidance(double_t* param, double hea
         cmd_ned    = vel_saturation(temp_cmd, param[5]);
     }
     else {
-        cmd_ned.x = cmd_ned.y = cmd_ned.z = 0.0;
+        cmd_ned[0] = cmd_ned[1] = cmd_ned[2] = 0.0;
     }
 
     return cmd_ned;  // Return NED setpoint
