@@ -12,8 +12,8 @@ find_package(ament_cmake REQUIRED)
 find_package(builtin_interfaces REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(px4_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
-find_package(sensor_msgs REQUIRED)
 find_package(rclpy REQUIRED)
 find_package(mavros_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
@@ -61,9 +61,23 @@ add_library(CUSTOMLIB SHARED
     src/frame.cpp
 )
 
+install(
+  TARGETS CONTROL LOG GUIDANCE CUSTOMLIB
+  EXPORT export_${PROJECT_NAME}       # export the targets for downstream use
+  ARCHIVE DESTINATION lib            # for static libs (if any)
+  LIBRARY DESTINATION lib            # for shared libs
+  RUNTIME DESTINATION bin            # for Windows DLLs or executables
+  INCLUDES DESTINATION include/${PROJECT_NAME}
+)
+
+install(
+  DIRECTORY launch
+  DESTINATION share/${PROJECT_NAME}
+)
+
 # 6. 실행 파일 정의 / 빌드된 바이너리 설치
 add_executable(offboard_control_test src/main_offboard.cpp)
-ament_target_dependencies(offboard_control_test rclcpp px4_msgs )
+ament_target_dependencies(offboard_control_test rclcpp px4_msgs geometry_msgs std_msgs)
 install(TARGETS offboard_control_test DESTINATION lib/${PROJECT_NAME})
 target_link_libraries(offboard_control_test CUSTOMLIB)
 target_link_libraries(offboard_control_test CONTROL)
@@ -74,15 +88,6 @@ target_include_directories(CUSTOMLIB PUBLIC
 	$<INSTALL_INTERFACE:include/${PROJECT_NAME}>
 )
 
-target_include_directories(CONTROL PUBLIC
-	$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/${PROJECT_NAME}>
-	$<INSTALL_INTERFACE:include/${PROJECT_NAME}>
-)
-
-target_include_directories(LOG PUBLIC
-	$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/${PROJECT_NAME}>
-	$<INSTALL_INTERFACE:include/${PROJECT_NAME}>
-)
 
 # 7. 생성된 서비스 타입 코드를 linkage
 rosidl_target_interfaces(offboard_control_test

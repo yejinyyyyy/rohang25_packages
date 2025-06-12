@@ -7,10 +7,10 @@
 // == 기본 설정 ==
 #define FRAME_MODE LLH
 #define ROS_FREQUENCY_HZ 10.0
-#define FILE_PATH "/home/jaehwan/log/ROS/wpt_time.csv"
-#define OUTPUT_FILE_PATH "/home/jaehwan/logs/ROS/output.csv"
-//#define LOG_FILE_PATH "/home/yejiny/logs/ROS/log.csv"
-#define SPT_FILE_PATH "/home/jaehwan/log/ROS/setpoint_local.csv"
+#define FILE_PATH "/home/yejin/log/ROS/wpt_time.csv"
+#define OUTPUT_FILE_PATH "/home/yejin/log/ROS/output.csv"
+//#define LOG_FILE_PATH "/home/yejin/logs/ROS/log.csv"
+#define SPT_FILE_PATH "/home/yejin/log/ROS/setpoint_local.csv"
 
 /* 
  * KONKUK_BIG_QUAD, KONKUK_SMALL_QUAD, HANAM, YANGPYEONG, GONGSA, INCHEON, OTHER

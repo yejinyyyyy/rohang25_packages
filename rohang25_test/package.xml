@@ -16,7 +16,7 @@
   <depend>builtin_interfaces</depend>
   <depend>px4_msgs</depend>
   <depend>geometry_msgs</depend>
-  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
   <depend>mavros_msgs</depend>
 
   <depend>launch</depend>
@@ -28,6 +28,7 @@
   <member_of_group>rosidl_interface_packages</member_of_group>'
 
   <!-- <exec_depend>ros2launch</exec_depend> -->
+  <exec_depend>launch_ros</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

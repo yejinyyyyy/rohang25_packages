@@ -51,7 +51,7 @@ int current_flight_mode = MC;
 class OffboardControl : public rclcpp::Node
 {
 public:
-	OffboardControl(std::string px4_namespace) : Node("offboard_control"),
+	OffboardControl(std::string px4_namespace) : Node("offboard_control_test"),
 		log_counter_(0),
 		current_confidence_(0.0f), current_timestamp_(0), current_timestamp_sample_(0),
 		current_indicated_airspeed_(0.0f), current_true_airspeed_(0.0f),

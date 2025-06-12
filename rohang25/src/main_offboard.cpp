@@ -63,9 +63,9 @@ public:
 		    "/fmu/out/airspeed", qos,
 		    [this](const Airspeed::SharedPtr msg) { this->listener_callback_airspeed(msg); });
 
-		subscription_vehicle_attitude = this->create_subscription<VehicleAttitude>(
-		    "/fmu/out/vehicle_attitude", qos,
-		    [this](const VehicleAttitude::SharedPtr msg) { this->listener_callback_attitude(msg); });
+		// subscription_vehicle_attitude = this->create_subscription<VehicleAttitude>(
+		//     "/fmu/out/vehicle_attitude", qos,
+		//     [this](const VehicleAttitude::SharedPtr msg) { this->listener_callback_attitude(msg); });
 
 		subscription_sensor_gps = this->create_subscription<SensorGps>(
 		    "/fmu/out/vehicle_gps_position", qos,
@@ -111,7 +111,7 @@ private:
 
 	rclcpp::Subscription<VehicleLocalPosition>::SharedPtr subscription_local_position;
 	rclcpp::Subscription<Airspeed>::SharedPtr subscription_airspeed;
-	rclcpp::Subscription<VehicleAttitude>::SharedPtr subscription_vehicle_attitude;
+	// rclcpp::Subscription<VehicleAttitude>::SharedPtr subscription_vehicle_attitude;
 	rclcpp::Subscription<SensorGps>::SharedPtr subscription_sensor_gps;
 
 	rclcpp::TimerBase::SharedPtr timer_;
@@ -185,7 +185,7 @@ private:
 
 	void listener_callback_local_position(const VehicleLocalPosition::SharedPtr msg);
 	void listener_callback_airspeed(const Airspeed::SharedPtr msg);
-	void listener_callback_attitude(const VehicleAttitude::SharedPtr msg);
+	// void listener_callback_attitude(const VehicleAttitude::SharedPtr msg);
 	void listener_callback_gps(const SensorGps::SharedPtr msg);
 };
 
