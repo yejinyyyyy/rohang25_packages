@@ -253,6 +253,8 @@ private:
 	
 	double deg2rad = 3.141592/180;
 	double rad2deg = 180/3.141592;
+
+	uint64_t log_counter_;
 };
 
 
@@ -319,8 +321,12 @@ void Geolocation_KF::timer_callback()
 		}
 		else
 		{
-			std::cout<<"================================================= "<<std::endl;
-			std::cout<<"Object Detection info :: NO VALID DATA "<<std::endl;
+			log_counter_++;
+			if (log_counter_ % 5 == 0) {
+				RCLCPP_INFO(this->get_logger(),"**************************************");
+				RCLCPP_INFO(this->get_logger(),"Object Detection info :: NO VALID DATA ");
+				RCLCPP_INFO(this->get_logger(),"**************************************");
+			}
 		}
 	}
 

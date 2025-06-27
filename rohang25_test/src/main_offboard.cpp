@@ -4,7 +4,7 @@
 /
 / Code for Mission Testing
 / 
-/ Last edit date : 250607 (Build complete)
+/ Last edit date : 250625
 */
 
 #include <px4_msgs/msg/offboard_control_mode.hpp>
@@ -42,6 +42,7 @@
 using namespace std::chrono;
 using namespace std::chrono_literals;
 using namespace px4_msgs::msg;
+using namespace std;
 using rohang25_test::srv::SetGuidanceParam;
 using std::placeholders::_1;
 using std::placeholders::_2;
@@ -56,8 +57,8 @@ public:
 		current_confidence_(0.0f), current_timestamp_(0), current_timestamp_sample_(0),
 		current_indicated_airspeed_(0.0f), current_true_airspeed_(0.0f),
 		current_roll_(0.0f), current_pitch_(0.0f), current_yaw_(0.0f), current_heading_(0.0f),
-		current_latitude_(0.0f), current_longitude_(0.0f), current_altitude_(0.0f), state_{State::init},
-		service_result_{0}, service_done_{false}
+		current_latitude_(0.0f), current_longitude_(0.0f), current_altitude_(0.0f), heading(0.0f), 
+		state_{State::init}, service_result_{0}, service_done_{false}
 	{
 		rmw_qos_profile_t qos_profile = rmw_qos_profile_sensor_data;
 		qos_profile.history = RMW_QOS_POLICY_HISTORY_KEEP_LAST;
@@ -122,7 +123,7 @@ public:
 		param[8] = 0.0;
 		param[9] = 0.0;
 
-		RCLCPP_INFO(this->get_logger(), "\nMission Start =================== 0314 UPDATE\n");
+		RCLCPP_INFO(this->get_logger(), "\nMission Start =================== 0625 UPDATE\n");
 
 		/******************************
 		*  	Create Log file		  *
@@ -174,6 +175,7 @@ private:
 	bool service_done_;
 	uint64_t log_counter_;
 	uint8_t num_of_steps = 0;
+	string MISSION_STATUS;
 
 	float current_confidence_;
 	uint64_t current_timestamp_;
@@ -183,11 +185,11 @@ private:
 	float current_roll_;
 	float current_pitch_;
 	float current_yaw_;
-	double current_heading_; 
+	float current_heading_; 
 	float current_latitude_; // global position
 	float current_longitude_;
 	float current_altitude_;
-	double heading;			 // for calculation inside loop
+	float heading;			 // for calculation inside loop
 
 	VehicleLocalPosition local_pose{}; // local position -> subscribed
 	TrajectorySetpoint pose{};  	   // local position -> to be published
@@ -460,8 +462,7 @@ void OffboardControl::publish_trajectory_setpoint()
 	/******************************
  	*   Local position Update	  *
  	******************************/
-	local3 = {local_pose.y, local_pose.x, -local_pose.z}; // ENU
-	set_position(pose, {local_pose.y, local_pose.x, -local_pose.z}); 
+	local3 = {local_pose.y, local_pose.x, -local_pose.z}; // ENU 
 
 	/******************************
  	*   Calculate Setpoint  	  *
@@ -474,11 +475,12 @@ void OffboardControl::publish_trajectory_setpoint()
 			// i=0; Takeoff at Home
 			set = {local_pose.y, local_pose.x, WPT[i][2]};
 			set_position(pose, set);
+			set_velocity(pose, {NAN, NAN, NAN});  // init
 			set_heading(pose, current_yaw_);
 
 			if(is_arrived_verti(local_pose, WPT[i], v_err)){
 							
-				if (hold_flag == false)
+				if(hold_flag == false)
     				hold_flag = true;
 				if(hold_flag){
 					// ================  set heading towards WP1 ===================
@@ -531,8 +533,8 @@ void OffboardControl::publish_trajectory_setpoint()
 		case 2: // Precise Landing
 			// i=1; WPT#1 
 		#ifndef MISSION_TEST_MODE
-			if(detection_flag == true){
-				RCLCPP_INFO(this->get_logger(), "================== Detected Marker, Start Landing");
+			if(detection_flag == true){  // change to object coordinates values?
+				MISSION_STATUS = "Detected Marker, Start Landing";
 				
 				control_mode[0] = false; // position control off, velocity control on, attitude control off
 				control_mode[1] = true;
@@ -541,27 +543,28 @@ void OffboardControl::publish_trajectory_setpoint()
 				set_position(pose, set);
 				set_velocity(pose, set_vel);
 
-				if(current_altitude_ < 0){  // Check landing altitude
+				if(-local_pose.z < 0){  // Check landing altitude
 					RCLCPP_INFO(this->get_logger(), "================== Landing Complete");
 					disarm();
 				}
 			}
 			else{
-				if(current_altitude_ > 5.0){
-					RCLCPP_INFO(this->get_logger(), "================== Searching for Marker..");
-					if(log_counter_ % 30 == 0){
-						set = {WPT[i][0], WPT[i][1], -local_pose.z + 1}; // descend 1m
+				if(-local_pose.z > 5.0){
+					MISSION_STATUS = "Searching for Marker..";
+
+					if(log_counter_ % 20 == 0){  // every 2 seconds
+						set = {WPT[i][0], WPT[i][1], set[2] - 3}; // descend 3m
 						set_position(pose, set);
 					}
 				}
 				else{
-					RCLCPP_INFO(this->get_logger(), "================== Cannot find marker, Auto-Land");
+					MISSION_STATUS = "Cannot find marker, Auto-Land";
 					
 					land();
 
 					if(state_ == State::land_requested)
 					{
-						RCLCPP_INFO(this->get_logger(), "================ Auto Land enabled ");
+						MISSION_STATUS = "Auto Land enabled ";
 						process++;
 					}
 				}
@@ -576,7 +579,7 @@ void OffboardControl::publish_trajectory_setpoint()
 		case 3: // Rescue mission
 			// i=1; WPT#1
 			if(detection_flag == true){
-				RCLCPP_INFO(this->get_logger(), "================== Detected Target, Approaching");
+				MISSION_STATUS = "Detected Target, Approaching";
 				
 				control_mode[0] = false; // position control off, velocity control on, attitude control off
 				control_mode[1] = true;				
@@ -585,12 +588,12 @@ void OffboardControl::publish_trajectory_setpoint()
 				set_position(pose, set);
 				set_velocity(pose, set_vel);
 
-				if(current_altitude_ <= 2){  // Check mission altitude
-					RCLCPP_INFO(this->get_logger(), "================== Waiting for mission");
+				if(-local_pose.z <= 2){  // Check mission altitude
+					MISSION_STATUS = "Waiting for mission";
 					set_position(pose, local3); // hover until mission done manually
 
 					if(mission_flag == true){  // manual input - service call or topic
-						RCLCPP_INFO(this->get_logger(), "================== Mission Complete, continue ..");
+						MISSION_STATUS = "Mission Complete, continue ..";
 						
 						process++;
 						detection_flag = false;
@@ -603,15 +606,15 @@ void OffboardControl::publish_trajectory_setpoint()
 			}
 			
 			else{
-				if(current_altitude_ > 5.0){
-					RCLCPP_INFO(this->get_logger(), "================== Searching for Target..");
+				if(-local_pose.z > 5.0){
+					MISSION_STATUS = "Searching for Target..";
 					if(log_counter_ % 30 == 0){
 						set = {WPT[i][0], WPT[i][1], -local_pose.z + 1}; // descend 1m
 						set_position(pose, set);
 					}
 				}
 				else{
-					RCLCPP_INFO(this->get_logger(), "================== Cannot find target, hovering");
+					MISSION_STATUS = "Cannot find target, hovering";
 					set_position(pose, local3); // set position to current local position
 					/*
 						Emergency Manual maneuver?
@@ -669,7 +672,7 @@ void OffboardControl::publish_trajectory_setpoint()
 		case 6: // Relase Target
 			// i=2; WPT#2
 			if(detection_flag == true){
-				RCLCPP_INFO(this->get_logger(), "================== Detected Marker, Approaching");
+				MISSION_STATUS = "Detected Marker, Approaching";
 				
 				control_mode[0] = false; // position control on
 				control_mode[1] = true; // velocity control off
@@ -678,12 +681,12 @@ void OffboardControl::publish_trajectory_setpoint()
 				set_position(pose, set);
 				set_velocity(pose, set_vel);
 
-				if(current_altitude_ <= 2){  // Check mission altitude
-					RCLCPP_INFO(this->get_logger(), "================== Waiting to release");
+				if(-local_pose.z <= 2){  // Check mission altitude
+					MISSION_STATUS = "Waiting to release";
 					set_position(pose, local3); // hover until mission done manually
 
 					if(mission_flag == true){  // manual input - service call or topic
-						RCLCPP_INFO(this->get_logger(), "================== Mission Complete, continue ..");
+						MISSION_STATUS = "Mission Complete, continue ..";
 						
 						detection_flag = false;
 						mission_flag = false;
@@ -695,15 +698,15 @@ void OffboardControl::publish_trajectory_setpoint()
 			}
 			
 			else{
-				if(current_altitude_ > 5.0){
-					RCLCPP_INFO(this->get_logger(), "================== Searching for Marker..");
+				if(-local_pose.z > 5.0){
+					MISSION_STATUS = "Searching for Marker..";
 					if(log_counter_ % 30 == 0){
 						set = {WPT[i][0], WPT[i][1], -local_pose.z + 1}; // descend 1m
 						set_position(pose, set);
 					}
 				}
 				else{
-					RCLCPP_INFO(this->get_logger(), "================== Cannot find Marker, hovering");
+					MISSION_STATUS = "Cannot find Marker, hovering";
 					set_position(pose, local3); // set position to current local position
 					/*
 						Emergency Manual maneuver?
@@ -759,7 +762,7 @@ void OffboardControl::publish_trajectory_setpoint()
 			// i=3; WPT#3
 
 			if(detection_flag == true){
-				RCLCPP_INFO(this->get_logger(), "================== Detected Marker, Start Landing");
+				MISSION_STATUS = "Detected Marker, Start Landing";
 				
 				control_mode[0] = false; // position control on
 				control_mode[1] = true; // velocity control off
@@ -768,27 +771,27 @@ void OffboardControl::publish_trajectory_setpoint()
 				set_position(pose, set);
 				set_velocity(pose, set_vel);
 
-				if(current_altitude_ < 0){  // Check landing altitude
+				if(-local_pose.z < 0){  // Check landing altitude
 					RCLCPP_INFO(this->get_logger(), "================== Landing Complete");
 					disarm();
 				}
 			}
 			else{
-				if(current_altitude_ > 5.0){
-					RCLCPP_INFO(this->get_logger(), "================== Searching for Marker..");
+				if(-local_pose.z > 5.0){
+					MISSION_STATUS = "Searching for Marker..";
 					if(log_counter_ % 30 == 0){
 						set = {WPT[i][0], WPT[i][1], -local_pose.z + 1}; // descend 1m
 						set_position(pose, set);
 					}
 				}
 				else{
-					RCLCPP_INFO(this->get_logger(), "================== Cannot find marker, Auto-Land");
+					MISSION_STATUS = "Cannot find marker, Auto-Land";
 					
 					land();
 
 					if(state_ == State::land_requested)
 					{
-						RCLCPP_INFO(this->get_logger(), "================ Auto Land enabled ");
+						MISSION_STATUS = "Auto Land enabled ";
 						process++;
 					}
 				}
@@ -893,18 +896,20 @@ void OffboardControl::timer_callback(void){
 					"Current heading: %.2f / Set heading: %.2f\n"
 					"Remain Dist: %f, to WPT#%d\n"
 					"Case #%d\n"
+					"========== MISSION STATUS =========\n"
+					"%s\n"
 					// "Airspeed:\n"
 					// "  Indicated: %.2f m/s, True: %.2f m/s\n"
 					// "Attitude:\n"
 					// "  Roll: %.2f, Pitch: %.2f, Heading: %.2f°\n"
 					// "GPS:\n"
 					// "  Latitude: %.7f, Longitude: %.7f, Altitude: %.2f m\n"
-					"==================================\n",
+					"==================================",
 					current_timestamp_, local_pose.x, local_pose.y, local_pose.z, 
 					pose.position[0], pose.position[1], pose.position[2],
-					current_heading_, DEF_R2D(heading),
 					pose.velocity[0], pose.velocity[1], pose.velocity[2],
-					remain, i, process
+					current_heading_, DEF_R2D(heading),
+					remain, i, process, MISSION_STATUS.c_str()
 					// current_indicated_airspeed_, current_true_airspeed_,
 					// current_roll_, current_pitch_, current_heading_,
 					// current_latitude_, current_longitude_, current_altitude_

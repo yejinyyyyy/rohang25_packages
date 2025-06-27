@@ -8,6 +8,7 @@ def generate_launch_description():
             executable='geolocation',
             name='geolocation_node',
             output='screen',
+            emulate_tty=True,
             parameters=[{'use_sim_time': False}]
         ),
         Node(
@@ -15,6 +16,7 @@ def generate_launch_description():
             executable='offboard_control_test', 
             name='offboard_test_node',
             output='screen',
+            emulate_tty=True,
         )
         # px4_msgs is a message-only package, no node needed
     ])
