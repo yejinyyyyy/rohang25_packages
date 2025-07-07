@@ -17,6 +17,13 @@ def generate_launch_description():
             name='offboard_test_node',
             output='screen',
             emulate_tty=True,
+        ),
+        Node(
+            package='gimbal_control_25',
+            executable='gimbal_control_node', 
+            name='gimbal_control_node',
+            output='screen',
+            emulate_tty=True,
         )
         # px4_msgs is a message-only package, no node needed
     ])
