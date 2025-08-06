@@ -16,7 +16,10 @@ find_package(std_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclpy REQUIRED)
 find_package(mavros_msgs REQUIRED)
+find_package(yolov11_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
+
+set(CMAKE_BUILD_TYPE Debug)
 
 # 3. 서비스(.srv) 인터페이스 생성
 rosidl_generate_interfaces(${PROJECT_NAME}
@@ -77,7 +80,7 @@ install(
 
 # 6. 실행 파일 정의 / 빌드된 바이너리 설치
 add_executable(offboard_control_test src/main_offboard.cpp)
-ament_target_dependencies(offboard_control_test rclcpp px4_msgs geometry_msgs std_msgs)
+ament_target_dependencies(offboard_control_test rclcpp px4_msgs geometry_msgs std_msgs yolov11_msgs)
 install(TARGETS offboard_control_test DESTINATION lib/${PROJECT_NAME})
 target_link_libraries(offboard_control_test CUSTOMLIB)
 target_link_libraries(offboard_control_test CONTROL)

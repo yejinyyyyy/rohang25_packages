@@ -14,6 +14,7 @@
   <depend>builtin_interfaces</depend>
   <depend>px4_msgs</depend>
   <depend>geometry_msgs</depend>
+  <depend>yolov11_msgs</depend>
 
   <depend>launch</depend>
   <depend>launch_testing</depend>

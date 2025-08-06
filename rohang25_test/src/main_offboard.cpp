@@ -11,12 +11,16 @@
 #include <px4_msgs/msg/trajectory_setpoint.hpp>
 #include <px4_msgs/srv/vehicle_command.hpp>
 #include <px4_msgs/msg/vehicle_local_position.hpp>
+#include <px4_msgs/msg/vehicle_global_position.hpp>
 #include <px4_msgs/msg/airspeed.hpp>//
 #include <px4_msgs/msg/vehicle_attitude.hpp>//
 #include <px4_msgs/msg/sensor_gps.hpp>
+#include <px4_msgs/msg/home_position.hpp> //??
 #include <geometry_msgs/msg/point32.hpp>
 #include <std_msgs/msg/bool.hpp>
+#include <std_msgs/msg/int32.hpp>
 #include <rclcpp/rclcpp.hpp>
+#include <yolov11_msgs/msg/detection.hpp>  
 
 #include "rohang25_test/srv/set_guidance_param.hpp"
 
@@ -59,7 +63,9 @@ public:
 		current_roll_(0.0f), current_pitch_(0.0f), current_yaw_(0.0f), current_heading_(0.0f),
 		current_latitude_(0.0f), current_longitude_(0.0f), current_altitude_(0.0f), heading(0.0f), 
 		state_{State::init}, service_result_{0}, service_done_{false}
-	{
+	{	
+		precision_control_mode = this->declare_parameter<int>("precision_control", 0); // 0: Pixel-based control, 1: NED-based control 
+
 		rmw_qos_profile_t qos_profile = rmw_qos_profile_sensor_data;
 		qos_profile.history = RMW_QOS_POLICY_HISTORY_KEEP_LAST;
 		qos_profile.depth = 20;
@@ -67,13 +73,25 @@ public:
 
 		offboard_control_mode_publisher_ = this->create_publisher<OffboardControlMode>("/fmu/in/offboard_control_mode", 10);
 		trajectory_setpoint_publisher_ = this->create_publisher<TrajectorySetpoint>("/fmu/in/trajectory_setpoint", 10);
-		geo_node_control_flag_publisher_ = this->create_publisher<std_msgs::msg::Bool>("/geo_node_control_flag", 10);
-		gimbal_node_control_flag_publisher_ = this->create_publisher<std_msgs::msg::Bool>("/gimbal_node_control_flag", 10);
+		vision_nodes_control_flag_publisher_ = this->create_publisher<std_msgs::msg::Bool>("/vision_nodes_control_flag", 10);
+		gimbal_node_control_flag_publisher_ = this->create_publisher<std_msgs::msg::Int32>("/gimbal_node_control_flag", 10);
 
 		subscription_local_position = this->create_subscription<VehicleLocalPosition>(
 		    "/fmu/out/vehicle_local_position", qos,
 		    [this](const VehicleLocalPosition::SharedPtr msg) { this->listener_callback_local_position(msg); });
+		
+		subscription_sensor_gps = this->create_subscription<SensorGps>(
+		    "/fmu/out/vehicle_gps_position", qos,
+		    [this](const SensorGps::SharedPtr msg) { this->listener_callback_gps(msg); });
+		    
+		subscription_global_position = this->create_subscription<VehicleGlobalPosition>(
+		    "/fmu/out/vehicle_global_position", qos,
+		    [this](const VehicleGlobalPosition::SharedPtr msg) { this->listener_callback_global_position(msg); });
 
+		subscription_home_position = this->create_subscription<HomePosition>(
+		    "/fmu/out/home_position", qos,
+		    [this](const HomePosition::SharedPtr msg) { this->listener_callback_home_position(msg); });
+		    
 		subscription_airspeed = this->create_subscription<Airspeed>(
 		    "/fmu/out/airspeed", qos,
 		    [this](const Airspeed::SharedPtr msg) { this->listener_callback_airspeed(msg); });
@@ -81,18 +99,22 @@ public:
 		// subscription_vehicle_attitude = this->create_subscription<VehicleAttitude>(
 		//     "/fmu/out/vehicle_attitude", qos,
 		//     [this](const VehicleAttitude::SharedPtr msg) { this->listener_callback_attitude(msg); });
-
-		subscription_sensor_gps = this->create_subscription<SensorGps>(
-		    "/fmu/out/vehicle_gps_position", qos,
-		    [this](const SensorGps::SharedPtr msg) { this->listener_callback_gps(msg); });
 		
 		subscription_object_ned = this->create_subscription<geometry_msgs::msg::Point32>(
 			"/object_center_ned", qos,
 			[this](const geometry_msgs::msg::Point32::SharedPtr msg) { this->listener_callback_object_ned(msg); });
 
+		subscription_object_pixel = this->create_subscription<yolov11_msgs::msg::Detection>(
+			"/yolov11/detection", qos,
+			[this](const yolov11_msgs::msg::Detection::SharedPtr msg) { this->listener_callback_object_pixel(msg); });
+
 		subscription_mission_flag = this->create_subscription<std_msgs::msg::Bool>(
 			"/mission_flag", qos,
 			[this](const std_msgs::msg::Bool::SharedPtr msg) { this->listener_callback_mission_flag(msg); });
+
+		subscription_kf_data_valid_flag = this->create_subscription<std_msgs::msg::Bool>(
+			"/kf_data_valid_flag", qos,
+			[this](const std_msgs::msg::Bool::SharedPtr msg) { this->listener_callback_kf_data_valid_flag(msg); });
 		
 		param_service_ = this->create_service<SetGuidanceParam>(
 			"/guidance_param",
@@ -111,10 +133,19 @@ public:
 
 		timer_ = this->create_wall_timer(100ms, std::bind(&OffboardControl::timer_callback, this));
 
-		// Initialize parameter values	
-		param[0] = 0.0;   // control type - 0: PIXEL, 1: NED axis
-		param[1] = 640.0; // goal position - X axis or North axis
-		param[2] = 360.0; // goal position - Y axis or East axis
+		// Initialize velocity guidance parameter values
+		if (precision_control_mode == 0)  // Pixel
+		{
+			param[0] = 0;   // control type - 0: PIXEL, 1: NED axis
+			param[1] = 640; // goal position - X axis(1280.0) 
+			param[2] = 360; // goal position - Y axis(720.0) 
+		}
+		else  // NED
+		{
+			param[0] = 1;   // control type - 0: PIXEL, 1: NED axis
+			param[1] = 35.0018; // goal position - North axis
+			param[2] = 27.3916; // goal position - East axis
+		}
 		param[3] = 0.01;  // p gain - X or North axis
 		param[4] = 0.01;  // p gain - Y or East axis
 		param[5] = 3.0;   // velocity saturation
@@ -123,12 +154,12 @@ public:
 		param[8] = 0.0;
 		param[9] = 0.0;
 
-		RCLCPP_INFO(this->get_logger(), "\nMission Start =================== 0625 UPDATE\n");
+		RCLCPP_INFO(this->get_logger(), "\nMission Start =================== 0721 UPDATE\n");
 
 		/******************************
 		*  	Create Log file		  *
 		******************************/
-		create_file(SPT_FILE_PATH);
+		create_file(ALT_FILE_PATH);
 
 	};
 
@@ -148,15 +179,19 @@ private:
 
 	rclcpp::Publisher<OffboardControlMode>::SharedPtr offboard_control_mode_publisher_;
 	rclcpp::Publisher<TrajectorySetpoint>::SharedPtr trajectory_setpoint_publisher_;
-	rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr geo_node_control_flag_publisher_;
-	rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr gimbal_node_control_flag_publisher_;
+	rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr vision_nodes_control_flag_publisher_;
+	rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr gimbal_node_control_flag_publisher_;
 
 	rclcpp::Subscription<VehicleLocalPosition>::SharedPtr subscription_local_position;
+	rclcpp::Subscription<VehicleGlobalPosition>::SharedPtr subscription_global_position;
+	rclcpp::Subscription<HomePosition>::SharedPtr subscription_home_position;
 	rclcpp::Subscription<Airspeed>::SharedPtr subscription_airspeed;
 	// rclcpp::Subscription<VehicleAttitude>::SharedPtr subscription_vehicle_attitude;
 	rclcpp::Subscription<SensorGps>::SharedPtr subscription_sensor_gps;
 	rclcpp::Subscription<geometry_msgs::msg::Point32>::SharedPtr subscription_object_ned;
+	rclcpp::Subscription<yolov11_msgs::msg::Detection>::SharedPtr subscription_object_pixel;
 	rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr subscription_mission_flag;
+	rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr subscription_kf_data_valid_flag;
 
 	rclcpp::TimerBase::SharedPtr timer_;
 	
@@ -176,6 +211,8 @@ private:
 	uint64_t log_counter_;
 	uint8_t num_of_steps = 0;
 	string MISSION_STATUS;
+	string PRECISION_CONTROL_MODE;
+	int precision_control_mode = 0;
 
 	float current_confidence_;
 	uint64_t current_timestamp_;
@@ -186,40 +223,47 @@ private:
 	float current_pitch_;
 	float current_yaw_;
 	float current_heading_; 
-	float current_latitude_; // global position
+	float current_latitude_; // sensor_gps
 	float current_longitude_;
 	float current_altitude_;
+	float current_global_altitude_; // vehicle_global_position
+	float home_latitude_; // home_position(global)
+	float home_longitude_;
+	float home_altitude_; 
 	float heading;			 // for calculation inside loop
+	float yolo_score;
 
 	VehicleLocalPosition local_pose{}; // local position -> subscribed
 	TrajectorySetpoint pose{};  	   // local position -> to be published
-	geometry_msgs::msg::Point32  current_object_ned; // subscribed object ned
+	geometry_msgs::msg::Point32 current_object_ned; // subscribed object ned
+	geometry_msgs::msg::Point32 current_object_pixel;
+	geometry_msgs::msg::Point32 current_object_;  // pixel / NED 둘 중 선택한 값
 
 	int process = 0;
-    int i = 0;
+	int i = 0;
     
 	bool control_mode[3] = {true, false, false}; // 0: position, 1: velocity, 2: attitude
-    bool hold_flag = false;
-    bool hold_flag2 = false;
+	bool hold_flag = false;
+	bool hold_flag2 = false;
 	bool gps_flag = false;
-	bool geo_node_control_flag = false;
-	bool gimbal_node_control_flag = false;	
+	bool vision_nodes_control_flag = false;
+	int gimbal_node_control_flag = 0;	 // 0: initial state, 1: start tracking, 2: finished tracking	
 	bool mission_flag = false; 
-	bool detection_flag = false;
+	bool detection_flag = false;  // kf_data_valid_flag
 
-    float step = MC_SPEED;
-    double h_err = MC_HORIZONTAL_ERROR;
-    double v_err = MC_VERTICAL_ERROR;
-    double a_err = HEADING_ERROR;
-    double DESC_RATE;
+	float step = MC_SPEED;
+	double h_err = MC_HORIZONTAL_ERROR;
+	double v_err = MC_VERTICAL_ERROR;
+	double a_err = HEADING_ERROR;
+	double DESC_RATE;
 
-    std::vector<double> start;
-    std::vector<double> middle;
-    std::vector<double> end;
-    std::vector<double> center;
-    std::vector<double> local;
-    std::vector<double> local3;
-    std::vector<double> set = {0, 0, 0};
+	std::vector<double> start;
+	std::vector<double> middle;
+	std::vector<double> end;
+	std::vector<double> center;
+	std::vector<double> local;
+	std::vector<double> local3;
+	std::vector<double> set = {0, 0, 0};
 	std::vector<double> set_vel = {0, 0, 0};
 	double remain;
 
@@ -238,11 +282,15 @@ private:
 	void publish_node_control_flag();
 	
 	void listener_callback_local_position(const VehicleLocalPosition::SharedPtr msg);
+	void listener_callback_global_position(const VehicleGlobalPosition::SharedPtr msg);
+	void listener_callback_home_position(const HomePosition::SharedPtr msg);	
 	void listener_callback_airspeed(const Airspeed::SharedPtr msg);
 	// void listener_callback_attitude(const VehicleAttitude::SharedPtr msg);
 	void listener_callback_gps(const SensorGps::SharedPtr msg);
 	void listener_callback_object_ned(const geometry_msgs::msg::Point32::SharedPtr msg);
+	void listener_callback_object_pixel(const yolov11_msgs::msg::Detection::SharedPtr msg);
 	void listener_callback_mission_flag(const std_msgs::msg::Bool::SharedPtr msg);
+	void listener_callback_kf_data_valid_flag(const std_msgs::msg::Bool::SharedPtr msg);
 };
 
 /**
@@ -398,7 +446,7 @@ void OffboardControl::listener_callback_gps(const SensorGps::SharedPtr msg)
 		std::vector<double> home_global = {current_latitude_, current_longitude_, current_altitude_};
 
 		RCLCPP_INFO(this->get_logger(), "global: %f, %f, %f", home_global[0], home_global[1], home_global[2]);
-		RCLCPP_INFO(this->get_logger(), "local: %f, %f, %f", home_local[0], home_local[1], home_local[2]);
+		RCLCPP_INFO(this->get_logger(), "local: %f, %f, %f", home_local[0], home_local[1], home_local[2]);  // SensorGps data
 
 		WPT[8][0] = home_global[0];  
 		WPT[8][1] = home_global[1];  // change later
@@ -415,6 +463,26 @@ void OffboardControl::listener_callback_gps(const SensorGps::SharedPtr msg)
 	}
 }
 
+void OffboardControl::listener_callback_global_position(const VehicleGlobalPosition::SharedPtr msg)
+{
+	current_global_altitude_ = msg->alt; // asml
+}
+	
+void OffboardControl::listener_callback_home_position(const HomePosition::SharedPtr msg)
+{
+	home_latitude_  = msg->lat;
+	home_longitude_ = msg->lon;
+	home_altitude_  = msg->alt;
+}
+
+void OffboardControl::listener_callback_object_pixel(const yolov11_msgs::msg::Detection::SharedPtr msg)
+{
+	current_object_pixel.x = msg->center_x;
+	current_object_pixel.y = msg->center_y;
+	yolo_score = msg->score;
+}
+
+
 void OffboardControl::listener_callback_object_ned(const geometry_msgs::msg::Point32::SharedPtr msg)
 {
 	current_object_ned = *msg;
@@ -423,6 +491,11 @@ void OffboardControl::listener_callback_object_ned(const geometry_msgs::msg::Poi
 void OffboardControl::listener_callback_mission_flag(const std_msgs::msg::Bool::SharedPtr msg)
 {
 	mission_flag = msg->data;
+}
+
+void OffboardControl::listener_callback_kf_data_valid_flag(const std_msgs::msg::Bool::SharedPtr msg)
+{
+	detection_flag = msg->data;
 }
 
 
@@ -446,11 +519,11 @@ void OffboardControl::listener_callback_mission_flag(const std_msgs::msg::Bool::
  */
  void OffboardControl::publish_node_control_flag()
  {
-	 std_msgs::msg::Bool geo_msg{};
-	 std_msgs::msg::Bool gimbal_msg{};
-	 geo_msg.data = geo_node_control_flag;
+	 std_msgs::msg::Bool vision_msg{};
+	 std_msgs::msg::Int32 gimbal_msg{};
+	 vision_msg.data = vision_nodes_control_flag;
 	 gimbal_msg.data = gimbal_node_control_flag;
-	 geo_node_control_flag_publisher_->publish(geo_msg);
+	 vision_nodes_control_flag_publisher_->publish(vision_msg);
 	 gimbal_node_control_flag_publisher_->publish(gimbal_msg);
  }
 
@@ -460,10 +533,20 @@ void OffboardControl::listener_callback_mission_flag(const std_msgs::msg::Bool::
 void OffboardControl::publish_trajectory_setpoint()	
 {
 	/******************************
- 	*   Local position Update	  *
+ 	*   Position Update	  *
  	******************************/
 	local3 = {local_pose.y, local_pose.x, -local_pose.z}; // ENU 
 
+	if (precision_control_mode == 0)  // Pixel
+	{
+		current_object_ = current_object_pixel;  // Kalman filtered Pixel -> current_object_ned
+		PRECISION_CONTROL_MODE = "PIXEL";
+	}
+	else  // NED
+	{
+		current_object_ = current_object_ned; 
+		PRECISION_CONTROL_MODE = "NED";
+	}
 	/******************************
  	*   Calculate Setpoint  	  *
  	******************************/
@@ -484,9 +567,7 @@ void OffboardControl::publish_trajectory_setpoint()
     				hold_flag = true;
 				if(hold_flag){
 					// ================  set heading towards WP1 ===================
-					start = {local_pose.x,local_pose.y};
-					end = {WPT[i][0], WPT[i][1]};
-					heading = get_angle({WPT[i+1][0], WPT[i+1][1]}, {WPT[i+2][0], WPT[i+2][1]});
+					heading = get_angle({local_pose.y, local_pose.x}, {WPT[i+1][0], WPT[i+1][1]});
 					set_heading(pose, heading);
 
 					if(is_arrived_direc(local_pose, heading, a_err)){
@@ -509,8 +590,8 @@ void OffboardControl::publish_trajectory_setpoint()
 
 		case 1: // to WPT1 (mission point)
 			// i=1; WPT#1
-			geo_node_control_flag = true;
-			gimbal_node_control_flag = true; // Start searching target
+			vision_nodes_control_flag = true;
+			gimbal_node_control_flag = 1; // Start searching target
 
 			start = {WPT[i-1][0], WPT[i-1][1]};
 			end = {WPT[i][0], WPT[i][1]};
@@ -521,11 +602,19 @@ void OffboardControl::publish_trajectory_setpoint()
 			set_position(pose, set);
 
 			if(is_arrived_hori(local_pose, WPT[i], h_err) || is_increase_dist(remain_dist(local_pose, WPT[i]))){
-				RCLCPP_INFO(this->get_logger(), "================== Arrived at WPT2 ");
-				process++;
+				if(hold_flag == false && hold(3))
+					hold_flag = true;
+				if(hold_flag){
+					RCLCPP_INFO(this->get_logger(), "\n================== Arrived at WPT2 ==================");
+					process++; 
+					i++;
+
+					hold_flag = false;
+					hold_flag2 = false;
 
 				//    save_timestamp(FILE_PATH, log_index++, timestamp); // 5: arrived at WPT2
 				//    save_timestamp(FILE_PATH, log_index++, timestamp); // 6: P turn start
+				}
 			}
 			break;
 		
@@ -533,19 +622,19 @@ void OffboardControl::publish_trajectory_setpoint()
 		case 2: // Precise Landing
 			// i=1; WPT#1 
 		#ifndef MISSION_TEST_MODE
-			if(detection_flag == true){  // change to object coordinates values?
+			if(detection_flag == true){  // if valid detection
 				MISSION_STATUS = "Detected Marker, Start Landing";
-				
 				control_mode[0] = false; // position control off, velocity control on, attitude control off
 				control_mode[1] = true;
 				set = {NAN, NAN, NAN}; 
-				set_vel = precise_landing_guidance(param, current_heading_, current_object_ned);
+				set_vel = precise_landing_guidance(param, current_heading_, current_object_, local3);
 				set_position(pose, set);
 				set_velocity(pose, set_vel);
 
-				if(-local_pose.z < 0){  // Check landing altitude
-					RCLCPP_INFO(this->get_logger(), "================== Landing Complete");
-					disarm();
+				if(-local_pose.z < 6.0){  // Check landing altitude
+					RCLCPP_INFO(this->get_logger(), "\n================== Landing Complete ==================");
+					land();
+					// disarm();
 				}
 			}
 			else{
@@ -553,7 +642,7 @@ void OffboardControl::publish_trajectory_setpoint()
 					MISSION_STATUS = "Searching for Marker..";
 
 					if(log_counter_ % 20 == 0){  // every 2 seconds
-						set = {WPT[i][0], WPT[i][1], set[2] - 3}; // descend 3m
+						set = {WPT[i][0], WPT[i][1], set[2] - 1}; // descend 3m
 						set_position(pose, set);
 					}
 				}
@@ -584,7 +673,7 @@ void OffboardControl::publish_trajectory_setpoint()
 				control_mode[0] = false; // position control off, velocity control on, attitude control off
 				control_mode[1] = true;				
 				set = {NAN, NAN, NAN}; 
-				set_vel = precise_landing_guidance(param, current_heading_, current_object_ned);
+				set_vel = precise_landing_guidance(param, current_heading_, current_object_, local3);
 				set_position(pose, set);
 				set_velocity(pose, set_vel);
 
@@ -598,6 +687,7 @@ void OffboardControl::publish_trajectory_setpoint()
 						process++;
 						detection_flag = false;
 						mission_flag = false;
+						gimbal_node_control_flag = 2; // finished tracking
 						control_mode[0] = true; // position control on
 						control_mode[1] = false; // velocity control off
 
@@ -677,7 +767,7 @@ void OffboardControl::publish_trajectory_setpoint()
 				control_mode[0] = false; // position control on
 				control_mode[1] = true; // velocity control off
 				set = {NAN, NAN, NAN}; 
-				set_vel = precise_landing_guidance(param, current_heading_, current_object_ned);
+				set_vel = precise_landing_guidance(param, current_heading_, current_object_, local3);
 				set_position(pose, set);
 				set_velocity(pose, set_vel);
 
@@ -767,7 +857,7 @@ void OffboardControl::publish_trajectory_setpoint()
 				control_mode[0] = false; // position control on
 				control_mode[1] = true; // velocity control off
 				set = {NAN, NAN, NAN}; 
-				set_vel = precise_landing_guidance(param, current_heading_, current_object_ned);
+				set_vel = precise_landing_guidance(param, current_heading_, current_object_, local3);
 				set_position(pose, set);
 				set_velocity(pose, set_vel);
 
@@ -804,8 +894,10 @@ void OffboardControl::publish_trajectory_setpoint()
 	/******************************
  	*  Print & Log current info   *
  	******************************/
-    remain = remain_dist(local_pose, WPT[i]);
-	save_setpoint_local(SPT_FILE_PATH, current_timestamp_, i, set, local3);
+    	remain = remain_dist(local_pose, WPT[i]);
+	// save_setpoint_local(SPT_FILE_PATH, current_timestamp_, i, set, local3);
+	// save_object_pixel(PIXEL_FILE_PATH, current_timestamp_, -local_pose.z, yolo_score, current_object_pixel.x, current_object_pixel.y);
+	save_altitude(ALT_FILE_PATH, current_timestamp_, current_altitude_, current_global_altitude_, local_pose.ref_alt, -local_pose.z);
 
 	/******************************
  	*  Publish Setpoint           *
@@ -890,9 +982,10 @@ void OffboardControl::timer_callback(void){
 		RCLCPP_INFO(this->get_logger(),
 					"\n========== CURRENT STATE ==========\n"
 					"Timestamp: %ld\n"
-					"Current: %.2f, %.2f %.2f\n"
-					"Setpoint: %.2f, %.2f, %.2f\n"
+					"Current(NED): %.2f, %.2f %.2f\n"
+					"Setpoint(NED): %.2f, %.2f, %.2f\n"
 					"Velocity setpoint:  %.2f, %.2f, %.2f\n"
+					"Object(%s) :: %.2f, %.2f\n"
 					"Current heading: %.2f / Set heading: %.2f\n"
 					"Remain Dist: %f, to WPT#%d\n"
 					"Case #%d\n"
@@ -904,15 +997,21 @@ void OffboardControl::timer_callback(void){
 					// "  Roll: %.2f, Pitch: %.2f, Heading: %.2f°\n"
 					// "GPS:\n"
 					// "  Latitude: %.7f, Longitude: %.7f, Altitude: %.2f m\n"
-					"==================================",
+
+					"==================================\n"
+					"|Altitude|  Global Rel: %.4f, Local: %.4f\n",
+					//"  GPS: %.4f, Fused: %.4f\n",
 					current_timestamp_, local_pose.x, local_pose.y, local_pose.z, 
 					pose.position[0], pose.position[1], pose.position[2],
 					pose.velocity[0], pose.velocity[1], pose.velocity[2],
+					PRECISION_CONTROL_MODE.c_str(), current_object_.x, current_object_.y,
 					current_heading_, DEF_R2D(heading),
-					remain, i, process, MISSION_STATUS.c_str()
+					remain, i, process, MISSION_STATUS.c_str(),
 					// current_indicated_airspeed_, current_true_airspeed_,
 					// current_roll_, current_pitch_, current_heading_,
 					// current_latitude_, current_longitude_, current_altitude_
+					current_altitude_-local_pose.ref_alt, local_pose.z
+					// current_altitude_, current_global_altitude_
 				);
 	}
 }

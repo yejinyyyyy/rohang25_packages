@@ -161,7 +161,7 @@ std::vector<double> velocity_guidance(std::vector<double> local, std::vector<dou
     // Output: current position - setpoint unit vector * cruise speed 2D -> pose
 
     std::vector<double> setpoint_2d = {setpoint[0], setpoint[1]}; 
-    double velocity = 17;  // cruise speed (assumed)
+    double velocity = 21;  // cruise speed (assumed)
     std::vector<double> v = eminus(setpoint_2d, local);
     std::vector<double> unit = mult_const(v, 1/norm(v));  // u
     std::vector<double> vel_vect = mult_const(unit, velocity);

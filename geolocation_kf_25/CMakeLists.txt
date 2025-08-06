@@ -14,6 +14,7 @@ find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(px4_msgs REQUIRED)
+find_package(yolov11_msgs REQUIRED)
 find_package(rclpy REQUIRED)
 find_package(Eigen3 3.3 REQUIRED NO_MODULE)
 
@@ -47,7 +48,7 @@ install(
 
 # 6. 실행 파일 정의 / 빌드된 바이너리 설치
 add_executable(geolocation src/geolocation_kf_node.cpp)
-ament_target_dependencies(geolocation rclcpp px4_msgs geometry_msgs std_msgs Eigen3)
+ament_target_dependencies(geolocation rclcpp px4_msgs geometry_msgs yolov11_msgs std_msgs Eigen3)
 install(TARGETS geolocation DESTINATION lib/${PROJECT_NAME})
 target_link_libraries(geolocation KALMANFILTER)
 target_link_libraries(geolocation Eigen3::Eigen)

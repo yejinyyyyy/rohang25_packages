@@ -151,7 +151,7 @@ private:
 	TrajectorySetpoint pose{};  	   // local position -> to be published
 
 	
-	int process = 0;
+	int process = 1;
     int i = 0;
     
     bool hold_flag = false;
@@ -331,10 +331,10 @@ void OffboardControl::listener_callback_gps(const SensorGps::SharedPtr msg)
 		RCLCPP_INFO(this->get_logger(), "global: %f, %f, %f", home_global[0], home_global[1], home_global[2]);
 		RCLCPP_INFO(this->get_logger(), "local: %f, %f, %f", home_local[0], home_local[1], home_local[2]);
 
-		WPT[8][0] = home_global[0];  
-		WPT[8][1] = home_global[1];  // change later
+		WPT[7][0] = home_global[0];  
+		WPT[7][1] = home_global[1];  // change later
 
-		for (int i=0; i<9; i++)
+		for (int i=0; i<8; i++)
 		{
 			WPT[i][2] = WPT[i][2] + home_global[2];
 		}
@@ -355,7 +355,7 @@ void OffboardControl::publish_trajectory_setpoint()
  	*   Local position Update	  *
  	******************************/
 	local3 = {local_pose.y, local_pose.x, -local_pose.z}; // ENU
-	set_position(pose, {local_pose.y, local_pose.x, -local_pose.z}); 
+	// set_position(pose, {local_pose.y, local_pose.x, -local_pose.z}); 
 
 	/******************************
  	*   Calculate Setpoint  	  *
@@ -364,13 +364,13 @@ void OffboardControl::publish_trajectory_setpoint()
 	if(state_ == State::armed){ 
 		switch(process)
 		{
-		case 0:
+		case 1:
 			// i=0; Takeoff
 			set = {local_pose.y, local_pose.x, WPT[i][2]};
 			
-			
 			set_position(pose, set);
 			set_heading(pose, current_yaw_);
+			set_velocity(pose, {NAN, NAN, NAN});  // init
 
 			if(is_arrived_verti(local_pose, WPT[i], v_err)){
 							
@@ -378,70 +378,69 @@ void OffboardControl::publish_trajectory_setpoint()
     				hold_flag = true;
 				if(hold_flag){
 					// ================  set heading towards WP1 ===================
-					// start = {local_pose.pose.position.x,local_pose.pose.position.y};
-					// end = {WPT[i][0], WPT[i][1]};
-					// heading = get_angle({WPT[i+1][0], WPT[i+1][1]}, {WPT[i+2][0], WPT[i+2][1]});
-					// set_heading(pose, heading);
+					heading = get_angle({local_pose.y, local_pose.x}, {WPT[i+1][0], WPT[i+1][1]});
+					set_heading(pose, heading);
 
-					// if(is_arrived_direc(local_pose, heading, a_err)){
-					//     if(hold_flag2 == false && hold(1))
-					//         hold_flag2 = true;
-					//     if(hold_flag2){
-						RCLCPP_INFO(this->get_logger(), "Take off Complete");
-						process++; // 다음 단계
-						i++;
+					if(is_arrived_direc(local_pose, heading, a_err)){
+						if(hold_flag2 == false && hold(1))
+							hold_flag2 = true;
+						if(hold_flag2){
+							RCLCPP_INFO(this->get_logger(), "Take off Complete");
+							process++; // 다음 단계
+							i++;
 
-						hold_flag = false;
-						hold_flag2 = false;
-					// }
+							hold_flag = false;
+							hold_flag2 = false;
+						}
+					}
 				}
 			}
 
 			break;
 		
-		case 1: // WPT1 and Hover
-			// i=1; WPT#1 MC
+		// case 1: // WPT1 and Hover
+		// 	// i=1; WPT#1 MC
 			
-			start = {WPT[i-1][0], WPT[i-1][1]};
-			end = {WPT[i][0], WPT[i][1]};
-			local = {local_pose.y, local_pose.x};
-			set = line_guidance(local, end, local, 2*step);
-			set = {local_pose.y + set[0], local_pose.x + set[1], WPT[i][2]};
-			set_position(pose, set);
-			if( is_arrived_hori(local_pose, WPT[i], h_err) && is_arrived_verti(local_pose, WPT[i], v_err) || is_increase_dist(remain_dist(local_pose, WPT[i])) ){
-				set_position(pose, WPT[i]);
-				if(hold_flag == false)
-					hold_flag = true;
-				if(hold_flag){
-					start = {WPT[i][0], WPT[i][1]};
-					end = {WPT[i+1][0], WPT[i+1][1]};
-					heading = get_angle(start, end);
-					set_heading(pose, heading);
+		// 	start = {WPT[i-1][0], WPT[i-1][1]};
+		// 	end = {WPT[i][0], WPT[i][1]};
+		// 	local = {local_pose.y, local_pose.x};
+		// 	set = line_guidance(local, end, local, 2*step);
+		// 	set = {local_pose.y + set[0], local_pose.x + set[1], WPT[i][2]};
+		// 	set_position(pose, set);
+		// 	if( is_arrived_hori(local_pose, WPT[i], h_err) && is_arrived_verti(local_pose, WPT[i], v_err) || is_increase_dist(remain_dist(local_pose, WPT[i])) ){
+		// 		set_position(pose, WPT[i]);
+		// 		if(hold_flag == false)
+		// 			hold_flag = true;
+		// 		if(hold_flag){
+		// 			start = {WPT[i][0], WPT[i][1]};
+		// 			end = {WPT[i+1][0], WPT[i+1][1]};
+		// 			heading = get_angle(start, end);
+		// 			set_heading(pose, heading);
 					
-					if(is_arrived_direc(local_pose, heading, a_err)){
-						if(hold_flag2 == false && hold(1.5))
-							hold_flag2 = true;
-						if(hold_flag2){
-							RCLCPP_INFO(this->get_logger(), "===================== Arrived at WPT1");
-							process++;
-							i++;
+		// 			if(is_arrived_direc(local_pose, heading, a_err)){
+		// 				if(hold_flag2 == false && hold(1.5))
+		// 					hold_flag2 = true;
+		// 				if(hold_flag2){
+		// 					RCLCPP_INFO(this->get_logger(), "===================== Arrived at WPT1");
+		// 					process++;
+		// 					i++;
 
-							hold_flag = false;
-							hold_flag2 = false;
-							}
-					}
-				}  
-			}
-			break;
+		// 					hold_flag = false;
+		// 					hold_flag2 = false;
+		// 					}
+		// 			}
+		// 		}  
+		// 	}
+		// 	break;
 
 		case 2: // Transition to FW
-		// i=2;
+		// i=1;
 		#ifndef QUAD_MODE
 			// ================ Transition while flying ===================	
 			start = {WPT[i-1][0], WPT[i-1][1]};
 			end = {WPT[i][0], WPT[i][1]};
 			local = {local_pose.y, local_pose.x};
-			set = line_guidance(local, end, local, 10);
+			set = line_guidance(local, end, local, 15);
 			set = {local_pose.y + set[0], local_pose.x + set[1], WPT[i][2]};
 			set_position(pose, set);
 
@@ -469,7 +468,7 @@ void OffboardControl::publish_trajectory_setpoint()
 
 		case 3: // to WPT2
 			// ROS_INFO("fly to WPT2..");
-			// i=2; WPT#2
+			// i=1; WPT#2
 
 			start = {WPT[i-1][0], WPT[i-1][1]};
 			end = {WPT[i][0], WPT[i][1]};
@@ -493,7 +492,7 @@ void OffboardControl::publish_trajectory_setpoint()
 
 		case 4: // to WP3
 			// ROS_INFO("fly to WP3..");
-			// i=3; WPT#3
+			// i=2; WPT#3
 			start = {WPT[i-1][0], WPT[i-1][1]};
 			end = {WPT[i][0], WPT[i][1]};
 			local = {local_pose.y, local_pose.x};
@@ -517,7 +516,7 @@ void OffboardControl::publish_trajectory_setpoint()
 
 		case 5: // P turn
 			// ROS_INFO("P turn start..");
-			// i=3; WPT#3
+			// i=2; WPT#3
 
 			// start = {WPT[i-1][0], WPT[i-1][1]};
 			// end = {WPT[i][0], WPT[i][1]};
@@ -551,7 +550,7 @@ void OffboardControl::publish_trajectory_setpoint()
 
 		case 6: // to WPT4
 			// ROS_INFO("fly to WPT4..");
-			// i=4; WPT#4
+			// i=3; WPT#4
 			start = {WPT[i-1][0], WPT[i-1][1]};
 			end = {WPT[i][0], WPT[i][1]};
 			local = {local_pose.y, local_pose.x};
@@ -575,13 +574,13 @@ void OffboardControl::publish_trajectory_setpoint()
 		case 7: // P turn
 
 			// ROS_INFO("P turn start..");
-			// i=4; WPT#4
+			// i=3; WPT#4
 			start = {WPT[i-1][0], WPT[i-1][1]};
 			middle = {WPT[i][0], WPT[i][1]};
 			end = {WPT[i+1][0], WPT[i+1][1]};
 
 			local = {local_pose.y, local_pose.x};
-			set = Pturn_guidance(start, middle, end, 30, local, step);
+			set = Pturn_guidance(start, middle, end, PTURN_RADIUS, local, step);
 			set = {local_pose.y + set[0], local_pose.x + set[1], -local_pose.z } ; // set is NED, changed sign
 			if(set[2] < WPT[i+1][2] + 3){ 
 				set[2] = WPT[i+1][2];
@@ -591,7 +590,7 @@ void OffboardControl::publish_trajectory_setpoint()
 			set_position(pose, set);
 			set_velocity(pose, set_vel);
 
-			if(hold_flag == false && hold(25)) // 3번 경로점을 충분히 지나갈 때까지 대기
+			if(hold_flag == false && hold(10)) // 3번 경로점을 충분히 지나갈 때까지 대기
 				hold_flag = true;
 
 			if(is_arrived_verti(local_pose, WPT[i+1], v_err) && hold_flag == true)
@@ -617,7 +616,7 @@ void OffboardControl::publish_trajectory_setpoint()
 
 		case 8: // to WP5
 			// ROS_INFO("fly to WPT5..");
-			// i=5; WPT#5
+			// i=4; WPT#5
 			start = {WPT[i-1][0], WPT[i-1][1]};
 			end = {WPT[i][0], WPT[i][1]};
 			local = {local_pose.y, local_pose.x};
@@ -642,13 +641,13 @@ void OffboardControl::publish_trajectory_setpoint()
 		case 9: // P turn
 
 			// ROS_INFO("P turn start..");
-			// i=5; WPT#5
+			// i=4; WPT#5
 			start = {WPT[i-1][0], WPT[i-1][1]};
 			middle = {WPT[i][0], WPT[i][1]};
 			end = {WPT[i+1][0], WPT[i+1][1]};
 
 			local = {local_pose.y, local_pose.x};
-			set = Pturn_guidance(start, middle, end, 30, local, step);
+			set = Pturn_guidance(start, middle, end, PTURN_RADIUS, local, step);
 			set = {local_pose.y + set[0], local_pose.x + set[1], -local_pose.z} ; // set is NED, changed sign
 			if(set[2] < WPT[i+1][2] + 3){ 
 				set[2] = WPT[i+1][2];
@@ -658,7 +657,7 @@ void OffboardControl::publish_trajectory_setpoint()
 			set_position(pose, set);
 			set_velocity(pose, set_vel);
 
-			if(hold_flag == false && hold(25)) // 3번 경로점을 충분히 지나갈 때까지 대기
+			if(hold_flag == false && hold(10)) // 3번 경로점을 충분히 지나갈 때까지 대기
 				hold_flag = true;
 
 			if(is_arrived_verti(local_pose, WPT[i+1], v_err) && hold_flag == true)
@@ -684,7 +683,7 @@ void OffboardControl::publish_trajectory_setpoint()
 		case 10: // to WP6
 
 			// ROS_INFO("fly to WPT6..");
-			// i=6; WPT#6
+			// i=5; WPT#6
 			start = {WPT[i-1][0], WPT[i-1][1]};
 			end = {WPT[i][0], WPT[i][1]};
 			local = {local_pose.y, local_pose.x};
@@ -703,7 +702,7 @@ void OffboardControl::publish_trajectory_setpoint()
 			
 			break;
 
-		case 11: // Transition to MC /i=6
+		case 11: // Transition to MC /i=5
 			#ifndef QUAD_MODE
 				// ============ set heading towards WP6 =============
 				start = {WPT[i-1][0], WPT[i-1][1]};
@@ -734,61 +733,70 @@ void OffboardControl::publish_trajectory_setpoint()
 
 		case 12: 
 			// ROS_INFO("fly to WPT6..");
-			// i=6; WPT#6
-			
+			// i=5; WPT#6
+			// start = {WPT[i-1][0], WPT[i-1][1]};
+			// end = {WPT[i][0], WPT[i][1]};
+			// local = {local_pose.y, local_pose.x};
+			// set = line_guidance(start, end, local, step);
 			set_position(pose, WPT[i]);
+			set_velocity(pose, {NAN, NAN, NAN}); 
 			
 			if(is_arrived_hori(local_pose, WPT[i], h_err) || is_increase_dist(remain_dist(local_pose, WPT[i]))){
 				
-					
-				
-					start = {WPT[i][0], WPT[i][1]};
-					end = {WPT[i+1][0], WPT[i+1][1]};
-					
-					if(is_arrived_direc(local_pose, heading, a_err)){ 
-						set_position(pose, WPT[i]);	
-						RCLCPP_INFO(this->get_logger(), "=================== Arrived at WPT6 ");
+				if(hold_flag == false && hold(1))
+    				hold_flag = true;
+				if(hold_flag){
+					heading = get_angle({local_pose.y, local_pose.x}, {WPT[i+1][0], WPT[i+1][1]});
+					set_heading(pose, heading);
 
-						heading = get_angle(start, end);
-						set_heading(pose, heading);  
-						
-						process++;
-						i++;
-							
+					if(is_arrived_direc(local_pose, heading, a_err)){
+						if(hold_flag2 == false && hold(1))
+							hold_flag2 = true;
+						if(hold_flag2){
+							RCLCPP_INFO(this->get_logger(), "=================== Arrived at WPT6 ");
+							process++; 
+							i++;
+
 							hold_flag = false;
 							hold_flag2 = false;
 						}
 					}
-				
+				}
+			}
 			break;
 
 		case 13: 
-			// ROS_INFO("fly to WPT6..");
-			// i=7; WPT#7
-			
-			set_position(pose, WPT[i]);
+			// ROS_INFO("fly to WPT7..");
+			// i=6; WPT#7
+			start = {WPT[i-1][0], WPT[i-1][1]};
+			end = {WPT[i][0], WPT[i][1]};
+			local = {local_pose.y, local_pose.x};
+			set = line_guidance(start, end, local, step);
+			set = {local_pose.y + set[0], local_pose.x + set[1], WPT[i][2]};
+			set_position(pose, set);
 			
 			if(is_arrived_hori(local_pose, WPT[i], h_err) || is_increase_dist(remain_dist(local_pose, WPT[i]))){
 				
-					
-				
-					start = {WPT[i][0], WPT[i][1]};
-					end = {WPT[i+1][0], WPT[i+1][1]};
-					
-					if(is_arrived_direc(local_pose, heading, a_err)){ 
-						//set_position(pose, WPT[i]);	
-						RCLCPP_INFO(this->get_logger(), "=================== Arrived at WPT7 ");
+				if(hold_flag == false && hold(1))
+    				hold_flag = true;
+				if(hold_flag){
+					heading = get_angle({local_pose.y, local_pose.x}, {WPT[i+1][0], WPT[i+1][1]});
+					set_heading(pose, heading);
 
-						heading = get_angle(start, end);
-						set_heading(pose, heading);  
-						
-						process++;
-						i++;
-							
+					if(is_arrived_direc(local_pose, heading, a_err)){
+						if(hold_flag2 == false && hold(1))
+							hold_flag2 = true;
+						if(hold_flag2){
+							RCLCPP_INFO(this->get_logger(), "=================== Arrived at WPT7 ");
+							process++; 
+							i++;
+
 							hold_flag = false;
 							hold_flag2 = false;
 						}
 					}
+				}
+			}
 				
 			break;
 
@@ -797,22 +805,28 @@ void OffboardControl::publish_trajectory_setpoint()
 
 		case 14: // to WP8
 			// ROS_INFO("fly to WP8..");
-			// i=8; WPT#8
-			set_position(pose, WPT[i]);
+			// i=7; WPT#8
+			start = {WPT[i-1][0], WPT[i-1][1]};
+			end = {WPT[i][0], WPT[i][1]};
+			local = {local_pose.y, local_pose.x};
+			set = line_guidance(start, end, local, step);
+			set = {local_pose.y + set[0], local_pose.x + set[1], WPT[i][2]};
+			set_position(pose, set);
 			
 			if(is_arrived_hori(local_pose, WPT[i], h_err) || is_increase_dist(remain_dist(local_pose, WPT[i]))){
-				
 
-					
-				if(is_arrived_direc(local_pose, heading, a_err)){ 
-					
-					RCLCPP_INFO(this->get_logger(), "=================== Arrived at WPT8 ");
-					RCLCPP_INFO(this->get_logger(), "Ready to Land ============= ");
-					
-					process++;
-					//i++;
+				if(hold_flag2 == false && hold(1))
+					hold_flag2 = true;
+				if(hold_flag2){
+					RCLCPP_INFO(this->get_logger(), "=================== Arrived at Base ");
+					process++; 
+					// i++;
+
+					hold_flag = false;
+					hold_flag2 = false;
 				}
 			}
+			
 			break;
 			
 
@@ -835,7 +849,7 @@ void OffboardControl::publish_trajectory_setpoint()
  	*  Print & Log current info   *
  	******************************/
     remain = remain_dist(local_pose, WPT[i]);
-	save_setpoint_local(SPT_FILE_PATH, current_timestamp_, i, set, local3);
+	save_setpoint_local(SPT_FILE_PATH, current_timestamp_, i, {pose.position[0], pose.position[1], pose.position[2]}, local3);
 
 	/******************************
  	*  Publish Setpoint           *
@@ -937,7 +951,7 @@ void OffboardControl::timer_callback(void){
 					pose.position[0], pose.position[1], pose.position[2],
 					current_heading_, DEF_R2D(heading),
 					pose.velocity[0], pose.velocity[1], pose.velocity[2],
-					remain, i, process
+					remain, i+1, process
 					// current_indicated_airspeed_, current_true_airspeed_,
 					// current_roll_, current_pitch_, current_heading_,
 					// current_latitude_, current_longitude_, current_altitude_

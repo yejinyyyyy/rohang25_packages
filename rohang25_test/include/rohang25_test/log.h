@@ -16,6 +16,8 @@ int create_file(const char *path);
 //void save_timestamp(const char *path, int wpt, unsigned long long time);
 //void save_output(const char *path, int wpt, double data, double altitude, unsigned long long time);
 void save_setpoint_local(const char *path, unsigned long long time, int wpt, std::vector<double> setpoint, std::vector<double> local);
+void save_object_pixel(const char *path, unsigned long long time, float alt, float score, int center_x, int center_y);
+void save_altitude(const char *path, unsigned long long time, float sensor_gps, float global_pos, float home_pos, float local_pos);
 // void save_log(const char *path, int autopilot, double *llh, int *datetime, int mission_index);
 
 #endif

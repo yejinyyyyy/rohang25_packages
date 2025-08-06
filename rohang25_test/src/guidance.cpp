@@ -171,7 +171,7 @@ std::vector<double> velocity_guidance(std::vector<double> local, std::vector<dou
 
 std::vector<double> vel_saturation(const geometry_msgs::msg::Point32 &in, double sat)
 {
-    std::vector<double> out;
+    std::vector<double> out(3);
     float lim = static_cast<float>(sat);
     out[0] = std::clamp(in.x, -lim, lim);
     out[1] = std::clamp(in.y, -lim, lim);
@@ -179,9 +179,9 @@ std::vector<double> vel_saturation(const geometry_msgs::msg::Point32 &in, double
     return out;
 }
 
-std::vector<double> precise_landing_guidance(double_t* param, double heading, geometry_msgs::msg::Point32 object_pos)
+std::vector<double> precise_landing_guidance(double_t* param, double heading, geometry_msgs::msg::Point32 object_pos, std::vector<double> local_pos)
 {
-    // Input: Parameter array, current heading, object position(NED)
+    // Input: Parameter array, current heading, object position(NED), local position(ENU)
     // Output: NED Setpoint for precise landing
 
     // Read mode and params
@@ -208,8 +208,8 @@ std::vector<double> precise_landing_guidance(double_t* param, double heading, ge
         // NED-based control
         double gn = param[1];
         double ge = param[2];
-        double en = object_pos.x - gn;
-        double ee = object_pos.y - ge;
+        double en = object_pos.x - gn; // local_pos[1];
+        double ee = object_pos.y - ge; // local_pos[0];
         temp_cmd.x =  param[3] * en;
         temp_cmd.y =  param[4] * ee;
         temp_cmd.z =  param[6];

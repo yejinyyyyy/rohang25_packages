@@ -29,9 +29,9 @@ void set_altitude(px4_msgs::msg::TrajectorySetpoint &pose, double alt)
 
 void set_velocity(px4_msgs::msg::TrajectorySetpoint &pose, std::vector<double> vel)
 {
-    pose.velocity[0] = vel[1];
-    pose.velocity[1] = vel[0];
-    pose.velocity[2] = 0;
+    pose.velocity[0] = vel[0];
+    pose.velocity[1] = vel[1];
+    pose.velocity[2] = vel[2];
 }
 
 

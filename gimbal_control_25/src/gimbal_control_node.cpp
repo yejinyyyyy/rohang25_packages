@@ -4,6 +4,7 @@
 #include <cstring>
 #include <cstdlib>
 #include <cerrno>
+#include <chrono>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -14,7 +15,17 @@
 #include <iomanip>
 #include <geometry_msgs/msg/point32.hpp>
 #include <px4_msgs/msg/vehicle_local_position.hpp>
+#include <std_msgs/msg/bool.hpp>
+#include <std_msgs/msg/int32.hpp>
+#include <std_msgs/msg/float64_multi_array.hpp>
+#include <yolov11_msgs/msg/detection.hpp>
 
+#include <stdint.h>
+#include <cmath>
+
+#include <chrono>
+
+#include <array>
 // ==============================
 // ZR10 짐벌 통신 관련 설정
 // ==============================
@@ -23,41 +34,50 @@
 #define SERVER_IP "192.168.144.25" // ZR10 Gimbal Default IP
 
 using namespace px4_msgs::msg;
+using namespace std::chrono;
+using namespace std::chrono_literals;
 
 
 class GimbalControlNode : public rclcpp::Node {
 public:
+    
 
     GimbalControlNode() : Node("gimbal_control_node") 
-    {
-        rmw_qos_profile_t qos_profile = rmw_qos_profile_sensor_data;
-		qos_profile.history = RMW_QOS_POLICY_HISTORY_KEEP_LAST;
-		qos_profile.depth = 20;
-		auto qos = rclcpp::QoS(rclcpp::QoSInitialization(qos_profile.history, qos_profile.depth), qos_profile);
-        
-        
+    {   
+        auto qos = rclcpp::SensorDataQoS();
         RCLCPP_INFO(this->get_logger(), "Gimbal Control Node 시작됨");
-        
-        subscription_object_center_ned= this->create_subscription<geometry_msgs::msg::Point32>( "/object_center_ned", qos, 
-            [this](const geometry_msgs::msg::Point32::ConstSharedPtr msg) { this->listener_callback_object_center_ned(msg); }); //지오로케이션 노드에서 퍼블리시하는 topic 받기
+        tvec_sub_ = this->create_subscription<std_msgs::msg::Float64MultiArray>( "/aruco/tvec", qos, [this](const std_msgs::msg::Float64MultiArray::SharedPtr msg)
+		{ RCLCPP_INFO(this->get_logger(), "✅ tvec 진입!");
+      		aruco_x_ = msg->data[0];
+      		aruco_y_ = msg->data[1];
+      		aruco_z_ = msg->data[2];
+      		RCLCPP_INFO(this->get_logger(),
+        	"Received tvec: x=%.2f, y=%.2f, z=%.2f",
+        	aruco_x_, aruco_y_, aruco_z_);
+    		});
+        timer_ = this->create_wall_timer(100ms, std::bind(&GimbalControlNode::control_loop, this));
 
-        subscription_local_position = this->create_subscription<VehicleLocalPosition>( "/fmu/out/vehicle_local_position", qos,
-            [this](const VehicleLocalPosition::ConstSharedPtr msg) { this->listener_callback_local_position(msg); });    
     }
 
 
 private:
 
+	rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr tvec_sub_;
 
-    rclcpp::Subscription<geometry_msgs::msg::Point32>::SharedPtr subscription_object_center_ned;
-    rclcpp::Subscription<px4_msgs::msg::VehicleLocalPosition>::SharedPtr subscription_local_position;
+    rclcpp::TimerBase::SharedPtr timer_;	
     
-    float fcc_position_N; float fcc_position_E; float fcc_position_D;    
-    geometry_msgs::msg::Point32 object_ned_msg;
-    
-    void listener_callback_object_center_ned(const geometry_msgs::msg::Point32::ConstSharedPtr msg);
-    void listener_callback_local_position(const VehicleLocalPosition::ConstSharedPtr msg);
-    // =====================
+    uint8_t yaw_hex[2] = {0, 0}; 
+    uint8_t pitch_hex[2] = {0, 0};
+    float yaw_deg;
+    float pitch_deg;
+    float aruco_x_=0;
+    float aruco_y_=0;
+    float aruco_z_=0;
+    std::vector<std::array<float,3>> tvec_buffer_;
+    static constexpr double  DEG_DEAD_BAND = 5.0;  // [°] 데드밴드 문턱
+    double last_yaw_deg_   = 0.0;
+    double last_pitch_deg_ = 0.0;
+
     // CRC16 테이블
     // =====================
     const uint16_t crc16_tab[256]= {0x0,0x1021,0x2042,0x3063,0x4084,0x50a5,0x60c6,0x70e7,
@@ -127,6 +147,65 @@ private:
     // =====================
     // 메인 제어 함수
     // =====================
+    void control_loop() {
+        RCLCPP_INFO(this->get_logger(), "🌀 control_loop 진입");
+        if (aruco_x_ == 0 && aruco_y_ == 0 && aruco_z_ == 0) {
+            RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "tvec 아직 수신되지 않음");
+            return;
+        }
+
+        tvec_buffer_.push_back({aruco_x_, aruco_y_, aruco_z_});
+
+        // 2) 10개가 모일 때까지 대기
+        if (tvec_buffer_.size() < 10) {
+            return;
+        }
+
+        // 3) 10개 평균 계산
+        float sum_x=0, sum_y=0, sum_z=0;
+        for (auto &s : tvec_buffer_) {
+            sum_x += s[0];
+            sum_y += s[1];
+            sum_z += s[2];
+        }
+        float avg_x = sum_x / 10.0f;
+        float avg_y = sum_y / 10.0f;
+        float avg_z = sum_z / 10.0f;
+
+        // 4) 평균값으로 제어
+        aruco_x_ = avg_x;
+        aruco_y_ = avg_y;
+        aruco_z_ = avg_z;
+
+
+        
+        tvec_buffer_.clear();
+
+        float new_pitch = atan2(-avg_y, sqrt(avg_x*avg_x + avg_z*avg_z)) * (180.0 / M_PI);
+        float new_yaw   = atan2(-avg_x, avg_z) * (180.0 / M_PI);
+
+        if ( abs(new_yaw   - last_yaw_deg_)   >= DEG_DEAD_BAND ||
+         abs(new_pitch - last_pitch_deg_) >= DEG_DEAD_BAND )
+        {
+        yaw_deg   = new_yaw;
+        pitch_deg = new_pitch;
+        last_yaw_deg_   = new_yaw;
+        last_pitch_deg_ = new_pitch;
+
+        // 5) 실제 짐벌 명령
+        control_gimbal();
+        }
+        else {
+            RCLCPP_DEBUG(this->get_logger(),
+            "데드밴드 이내(Δyaw=%.2f°, Δpitch=%.2f°) → 명령 생략",
+            new_yaw - last_yaw_deg_, new_pitch - last_pitch_deg_);
+            }
+
+        control_gimbal();
+    }
+    
+
+
     void control_gimbal() {
         int sockfd;
         int recv_len;
@@ -137,10 +216,11 @@ private:
         // 0. 주고 받는 데이터 저장 배열
         unsigned char recv_buf[RECV_BUF_SIZE] = {0};
         unsigned char att_send_buf[] = {
-            0x55, 0x66, 0x01, 0x01,
-            0x00, 0x00, 0x00, 0x08,
-            0x01, 0xd1, 0x12 // 초기 센터로 정렬
-        }; 
+            0x55, 0x66, 0x01, 0x04,
+            0x00, 0x00, 0x00, 0x0e,
+            0x00, 0x00, 0xff, 0xa6,
+            0x09, 0x3F
+        }; //-90 degree
 
         // 1. 통신을 위한 UDP 소켓 생성
         if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
@@ -154,30 +234,22 @@ private:
         send_addr.sin_port = htons(SERVER_PORT);
         send_addr.sin_addr.s_addr = inet_addr(SERVER_IP);
 
+            std::vector<float> target = {aruco_x_,aruco_y_,aruco_z_};
+            float x = target[0];
+            float y = target[1];
+            float z = target[2];
+    
+            pitch_deg = atan2(-y, sqrt(x*x + z*z)) * (180.0 / M_PI);
+            yaw_deg = atan2(-x, z) * (180.0 / M_PI);
+            encode_attitude(yaw_deg, pitch_deg, yaw_hex, pitch_hex);
+            
+            
         
-        // 3. 카메라와 조난자의 NED 좌표 설정
-        std::vector<float> target = {object_ned_msg.x, object_ned_msg.y, object_ned_msg.z};  // 조난자 위치
-        std::vector<float> origin = {fcc_position_N, fcc_position_E, fcc_position_D};  // 카메라 중심
-
-        // 4. 벡터 차이 계산
-        float dx = target[0] - origin[0];
-        float dy = target[1] - origin[1];
-        float dz = target[2] - origin[2];
-
-        // 5. 요, 피치 계산 (라디안 → 도)
-        float pitch_rad = atan2(-dz, sqrt(dx*dx + dy*dy));
-        float pitch_deg = pitch_rad * (180.0f / M_PI);
-        float yaw_rad = atan2(dy, dx);
-        float yaw_deg = yaw_rad * (180.0f / M_PI);
-
-        //Yaw range -135 ~ 135 deg(CCW) , Pitch range -90 ~ 25 deg
-        uint8_t pitch_hex[2], yaw_hex[2];
-        encode_attitude(yaw_deg, pitch_deg, yaw_hex, pitch_hex);   // input 각도 → hex 변환
 
         // 6. 요 피치 출력 (디버그용)
         RCLCPP_INFO(this->get_logger(), "Pitch = %.2f, Yaw = %.2f", pitch_deg, yaw_deg);
-        RCLCPP_INFO(this->get_logger(), "yaw_hex = %02x, %02x", yaw_hex[0], yaw_hex[1]);
-        RCLCPP_INFO(this->get_logger(), "pitch_hex = %02x, %02x", pitch_hex[0], pitch_hex[1]);
+        // RCLCPP_INFO(this->get_logger(), "yaw_hex = %02x, %02x", yaw_hex[0], yaw_hex[1]);
+        // RCLCPP_INFO(this->get_logger(), "pitch_hex = %02x, %02x", pitch_hex[0], pitch_hex[1]);
 
         // 7. 전송할 버퍼에 각도 삽입
         att_send_buf[8] = yaw_hex[0];
@@ -192,6 +264,10 @@ private:
 
         RCLCPP_INFO(this->get_logger(), "🔐 CRC16 = 0x%04X", crc);
 
+        RCLCPP_INFO(this->get_logger(), "✅ 짐벌 명령 전송 완료");
+
+        
+
         // 9. UDP 전송
         socklen_t addr_len = sizeof(struct sockaddr_in);
         if (sendto(sockfd, att_send_buf, sizeof(att_send_buf), 0,
@@ -200,7 +276,7 @@ private:
             close(sockfd);
             return;
         }
-        RCLCPP_INFO(this->get_logger(), "✅ 짐벌 명령 전송 완료");
+        
 
         // 10. 응답 수신
         recv_len = recvfrom(sockfd, recv_buf, RECV_BUF_SIZE, 0,
@@ -216,28 +292,18 @@ private:
         for (int i = 0; i < recv_len; i++) {
             ss << std::hex << std::setw(2) << std::setfill('0') << (int)recv_buf[i] << " ";
         }
-        RCLCPP_INFO(this->get_logger(), "📨 수신 데이터 (%d bytes): %s", recv_len, ss.str().c_str());
+        // RCLCPP_INFO(this->get_logger(), "📨 수신 데이터 (%d bytes): %s", recv_len, ss.str().c_str());
 
         // 12. 소켓 종료
         close(sockfd);
     }
 };
 
-void GimbalControlNode::listener_callback_object_center_ned(const geometry_msgs::msg::Point32::ConstSharedPtr msg)
-{
-	object_ned_msg = *msg;	
-    RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "받은 NED 좌표: x=%.2f, y=%.2f, z=%.2f",
-    object_ned_msg.x, object_ned_msg.y, object_ned_msg.z);
-}
 
-void GimbalControlNode::listener_callback_local_position(const VehicleLocalPosition::ConstSharedPtr msg)
-{
-	fcc_position_N = msg->x;  // FC 기준,짐벌 기준으로 필요하면 보정
-	fcc_position_E = msg->y;
-	fcc_position_D = msg->z;
-}
 
 int main(int argc, char * argv[]) {
+    
+    setenv("ROS_LOG_DIR", "/home/yejin/gimbal_logs", 1);
     rclcpp::init(argc, argv);
     rclcpp::spin(std::make_shared<GimbalControlNode>());
     rclcpp::shutdown();

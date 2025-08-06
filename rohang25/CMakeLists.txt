@@ -43,6 +43,15 @@ add_library(CUSTOMLIB SHARED
     
 )
 
+install(
+  TARGETS CONTROL LOG CUSTOMLIB
+  EXPORT export_${PROJECT_NAME}       # export the targets for downstream use
+  ARCHIVE DESTINATION lib            # for static libs (if any)
+  LIBRARY DESTINATION lib            # for shared libs
+  RUNTIME DESTINATION bin            # for Windows DLLs or executables
+  INCLUDES DESTINATION include/${PROJECT_NAME}
+)
+
 
 add_executable(offboard_control src/main_offboard.cpp)
 ament_target_dependencies(offboard_control rclcpp px4_msgs )

@@ -27,6 +27,20 @@ void save_setpoint_local(const char *path, unsigned long long time, int wpt, std
    fclose(fp);
 }
 
+void save_object_pixel(const char *path, unsigned long long time, float alt, float score, int center_x, int center_y)
+{
+   FILE *fp = fopen(path, "a+");
+   fprintf(fp, "%lld,Altitude(m),%.4f,Score,%f,Pixel,%d,%d\n", time, alt, score, center_x, center_y);
+   fclose(fp);
+}
+
+void save_altitude(const char *path, unsigned long long time, float sensor_gps, float global_pos, float home_pos, float local_pos)
+{
+   FILE *fp = fopen(path, "a+");
+   fprintf(fp, "%lld,Altitude(GPS-global-home-local),%.5f,%.5f,%.5f,%.5f\n", time, sensor_gps, global_pos, home_pos, local_pos);
+   fclose(fp);
+}
+
 // void save_log(const char *path, int autopilot, double *llh, int *datetime, int mission_index)
 // {
 //     int i = 0;
