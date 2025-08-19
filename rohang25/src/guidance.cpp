@@ -155,16 +155,18 @@ std::vector<double> corridor_alt(std::vector<double> start, std::vector<double> 
     return current_line;
 }
 
-std::vector<double> velocity_guidance(std::vector<double> local, std::vector<double> setpoint)
+std::vector<double> velocity_guidance(std::vector<double> local, std::vector<double> setpoint, double step)
 {
-    // Input: local(2D), setpoint(3D)
+    // Input: local(2D), setpoint(3D), step
     // Output: current position - setpoint unit vector * cruise speed 2D -> pose
 
+    // double psi_path = get_angle(start, end);
+    // std::vector<double> vel_vect = {step*sin(psi_path), step*cos(psi_path)};  // start - end direction vector
+
     std::vector<double> setpoint_2d = {setpoint[0], setpoint[1]}; 
-    double velocity = 21;  // cruise speed (assumed)
     std::vector<double> v = eminus(setpoint_2d, local);
     std::vector<double> unit = mult_const(v, 1/norm(v));  // u
-    std::vector<double> vel_vect = mult_const(unit, velocity);
+    std::vector<double> vel_vect = mult_const(unit, step);
 
     return vel_vect;
 }

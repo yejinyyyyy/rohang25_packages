@@ -34,14 +34,16 @@ target_include_directories(LOG PUBLIC
 )
 
 
-
 add_library(CUSTOMLIB SHARED
     src/algebra.cpp
     src/frame.cpp
     src/guidance.cpp
-    
-    
 )
+target_include_directories(CUSTOMLIB PUBLIC
+	$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/${PROJECT_NAME}>
+	$<INSTALL_INTERFACE:include/${PROJECT_NAME}>
+)
+
 
 install(
   TARGETS CONTROL LOG CUSTOMLIB
@@ -59,20 +61,6 @@ install(TARGETS offboard_control DESTINATION lib/${PROJECT_NAME})
 target_link_libraries(offboard_control CUSTOMLIB)
 target_link_libraries(offboard_control CONTROL)
 target_link_libraries(offboard_control LOG)
-target_include_directories(CUSTOMLIB PUBLIC
-	$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/${PROJECT_NAME}>
-	$<INSTALL_INTERFACE:include/${PROJECT_NAME}>
-)
-
-target_include_directories(CONTROL PUBLIC
-	$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/${PROJECT_NAME}>
-	$<INSTALL_INTERFACE:include/${PROJECT_NAME}>
-)
-
-target_include_directories(LOG PUBLIC
-	$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/${PROJECT_NAME}>
-	$<INSTALL_INTERFACE:include/${PROJECT_NAME}>
-)
 
 
 # Install header files

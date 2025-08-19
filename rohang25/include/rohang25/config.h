@@ -15,7 +15,7 @@
 /* 
  * KONKUK_BIG_QUAD, KONKUK_SMALL_QUAD, HANAM, YANGPYEONG, GONGSA, INCHEON, OTHER
  */
-#define MISSION_NUMBER GWANGNARU
+#define MISSION_NUMBER SACHEON
 // #define QUAD_MODE
 // #define OFF_TEST_MODE
 
@@ -26,11 +26,11 @@
 #define MC_VERTICAL_ERROR 1.0
 #define HEADING_ERROR (5*(M_PI/180))
 
-#define BACK_TRANSITION_DIST 125
+#define BACK_TRANSITION_DIST 180
 // #define OBSTACLE_RANGE 3
 
 // 아래 특성은 이름 의미와는 달리 임의의 상수로, 실험적으로 찾아진 것
-#define FW_SPEED 21
+#define FW_SPEED 18 // cruise speed = trim speed (param)
 #define MC_SPEED 3
 #define MIN_ROTATION_RADIUS 26
 #define CLIME_RATE 3

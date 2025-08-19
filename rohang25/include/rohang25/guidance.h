@@ -15,5 +15,5 @@ std::vector<double> circle_guidance(std::vector<double> center, double radius, d
 std::vector<double> Pturn_guidance(std::vector<double> p1, std::vector<double> p2, std::vector<double> p3, double radius, std::vector<double> local, double step);
 // std::vector<double> obstacle_avoidance(std::vector<double> start, std::vector<double> end, std::vector<double> local, double step, std::vector<double> obstacle, double radius=-1);
 std::vector<double> corridor_alt(std::vector<double> start, std::vector<double> end, std::vector<double> local3);
-std::vector<double> velocity_guidance(std::vector<double> local, std::vector<double> setpoint);
+std::vector<double> velocity_guidance(std::vector<double> start, std::vector<double> end, double step);
 #endif
