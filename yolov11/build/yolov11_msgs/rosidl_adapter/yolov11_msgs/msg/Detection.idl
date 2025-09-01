@@ -1,0 +1,20 @@
+// generated from rosidl_adapter/resource/msg.idl.em
+// with input from yolov11_msgs/msg/Detection.msg
+// generated code does not contain a copyright notice
+
+
+module yolov11_msgs {
+  module msg {
+    @verbatim (language="comment", text=
+      "Detection.msg")
+    struct Detection {
+      string class_id;
+
+      float score;
+
+      int32 center_x;
+
+      int32 center_y;
+    };
+  };
+};

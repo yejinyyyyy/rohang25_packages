@@ -1,0 +1,6 @@
+setuptools
+torch
+torchvision
+numpy
+opencv-python
+ultralytics

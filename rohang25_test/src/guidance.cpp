@@ -155,6 +155,54 @@ std::vector<double> corridor_alt(std::vector<double> start, std::vector<double> 
     return current_line;
 }
 
+std::vector<double> velocity_guidance_mc(std::vector<double> v_curr, std::vector<double> v_prev, std::vector<double> vector, float v_max, float acc, float &acc_out, double remain_dist)
+{
+    // Input: Current velocity(output), Previous velocity(input), line guidance output, max velocity, acceleration, remaining distance to next WPT
+    // Output: velocity setpoint(2D) for MC
+    static bool max_flag = false;
+    double dec_dist = v_max * v_max / (2 * acc); // distance to decelerate to max velocity
+    std::vector<double> v_unit = mult_const(vector, 1/norm(vector)); // unit vector of line guidance output
+    std::vector<double> v_out;
+
+    if(norm(v_prev) < v_max && remain_dist > dec_dist && !max_flag) {
+        // Accelerate until max velocity
+        v_out = mult_const(v_unit, (norm(v_prev) + acc/10));  // 10hz
+        acc_out = acc;
+
+        if(norm(v_out) >= v_max){
+            v_out = mult_const(v_unit, v_max);
+            max_flag = true;
+        }
+    } 
+    else if(max_flag && remain_dist > dec_dist){
+        // Constant velocity (+feedback?)
+        v_out = mult_const(v_unit, v_max);
+        acc_out = 0; 
+    }
+    else if(max_flag && remain_dist < dec_dist){
+        // Decelerate to 0
+        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Start Decelerating ... \n");
+
+        v_out = mult_const(v_unit, (norm(v_prev) - acc/10));  // 10hz
+        acc_out = -acc;
+
+        if(remain_dist <= 0.5){  // 범위 검토
+            v_out = {0, 0};
+            acc_out = 0;
+            max_flag = false;
+        }
+    }
+    else
+    {
+        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "******** Arrived, hovering ********");
+        v_out =  {0, 0};
+    }
+    
+    v_out = {v_out[0], v_out[1], 0};  // z(down) velocity = 0
+
+    return v_out;
+}
+
 std::vector<double> velocity_guidance(std::vector<double> local, std::vector<double> setpoint)
 {
     // Input: local(2D), setpoint(3D)
@@ -173,9 +221,9 @@ std::vector<double> vel_saturation(const geometry_msgs::msg::Point32 &in, double
 {
     std::vector<double> out(3);
     float lim = static_cast<float>(sat);
-    out[0] = std::clamp(in.x, -lim, lim);
-    out[1] = std::clamp(in.y, -lim, lim);
-    out[2] = in.z;
+    out[0] = std::clamp(in.y, -lim, lim);
+    out[1] = std::clamp(in.x, -lim, lim);
+    out[2] = -in.z;
     return out;
 }
 
@@ -190,7 +238,7 @@ std::vector<double> precise_landing_guidance(double_t* param, double heading, ge
     std::vector<double> cmd_ned;
 
     if (mode == 0.0) {
-        // Pixel-based control
+        // Pixel-based control (NED)
         double gx = param[1];
         double gy = param[2];
         double ex = object_pos.x - gx;
@@ -213,7 +261,7 @@ std::vector<double> precise_landing_guidance(double_t* param, double heading, ge
         temp_cmd.x =  param[3] * en;
         temp_cmd.y =  param[4] * ee;
         temp_cmd.z =  param[6];
-        cmd_ned    = vel_saturation(temp_cmd, param[5]);
+        cmd_ned    = vel_saturation(temp_cmd, param[5]);  // switch to ENU
     }
     else {
         cmd_ned[0] = cmd_ned[1] = cmd_ned[2] = 0.0;

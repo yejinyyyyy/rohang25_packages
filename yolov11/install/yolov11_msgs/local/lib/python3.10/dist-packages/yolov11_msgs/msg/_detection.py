@@ -1,0 +1,1 @@
+/home/jaehwan/yolov11/build/yolov11_msgs/rosidl_generator_py/yolov11_msgs/msg/_detection.py

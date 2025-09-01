@@ -1,0 +1,2 @@
+[console_scripts]
+yolov11_node = yolov11.yolov11_node:main

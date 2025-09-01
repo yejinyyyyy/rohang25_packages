@@ -1,0 +1,13 @@
+package.xml
+setup.cfg
+setup.py
+resource/yolov11
+yolov11/__init__.py
+yolov11/yolov11_node.py
+yolov11.egg-info/PKG-INFO
+yolov11.egg-info/SOURCES.txt
+yolov11.egg-info/dependency_links.txt
+yolov11.egg-info/entry_points.txt
+yolov11.egg-info/requires.txt
+yolov11.egg-info/top_level.txt
+yolov11.egg-info/zip-safe

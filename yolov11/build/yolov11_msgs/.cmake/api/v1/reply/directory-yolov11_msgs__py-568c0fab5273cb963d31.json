@@ -1,0 +1,14 @@
+{
+	"backtraceGraph" : 
+	{
+		"commands" : [],
+		"files" : [],
+		"nodes" : []
+	},
+	"installers" : [],
+	"paths" : 
+	{
+		"build" : "yolov11_msgs__py",
+		"source" : "/home/jaehwan/yolov11/build/yolov11_msgs/yolov11_msgs__py"
+	}
+}

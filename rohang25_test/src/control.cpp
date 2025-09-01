@@ -29,11 +29,17 @@ void set_altitude(px4_msgs::msg::TrajectorySetpoint &pose, double alt)
 
 void set_velocity(px4_msgs::msg::TrajectorySetpoint &pose, std::vector<double> vel)
 {
-    pose.velocity[0] = vel[0];
-    pose.velocity[1] = vel[1];
-    pose.velocity[2] = vel[2];
+    pose.velocity[0] = vel[1]; // ENU -> NED ** 정밀착륙시 수정 필요**
+    pose.velocity[1] = vel[0];
+    pose.velocity[2] = -vel[2];
 }
 
+void set_accel(px4_msgs::msg::TrajectorySetpoint &pose, std::vector<double> acc)
+{
+    pose.acceleration[0] = acc[1];
+    pose.acceleration[1] = acc[0];
+    pose.acceleration[2] = 0;
+}
 
 bool hold(double seconds) 
 {

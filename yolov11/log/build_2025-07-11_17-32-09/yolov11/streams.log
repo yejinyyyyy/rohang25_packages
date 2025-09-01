@@ -1,0 +1,24 @@
+[0.447s] Invoking command in '/home/jaehwan/yolov11/build/yolov11': AMENT_PREFIX_PATH=/home/jaehwan/yolov11/install/yolov11_msgs:${AMENT_PREFIX_PATH} CMAKE_PREFIX_PATH=/home/jaehwan/yolov11/install/yolov11_msgs LD_LIBRARY_PATH=/home/jaehwan/yolov11/install/yolov11_msgs/lib:/home/jaehwan/ws_offboard_control/build/rohang25:/usr/lib/x86_64-linux-gnu/gazebo-11/plugins:/opt/ros/humble/opt/rviz_ogre_vendor/lib:/opt/ros/humble/lib/x86_64-linux-gnu:/opt/ros/humble/lib:/usr/share/gazebo/../../lib/x86_64-linux-gnu/gazebo-11/plugins PYTHONPATH=/home/jaehwan/yolov11/build/yolov11/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/jaehwan/yolov11/install/yolov11/lib/python3.10/site-packages:/home/jaehwan/yolov11/install/yolov11_msgs/local/lib/python3.10/dist-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py develop --editable --build-directory /home/jaehwan/yolov11/build/yolov11/build --no-deps symlink_data
+[0.546s] /home/jaehwan/.local/lib/python3.10/site-packages/setuptools/_distutils/dist.py:270: UserWarning: Unknown distribution option: 'tests_require'
+[0.546s]   warnings.warn(msg)
+[0.655s] running develop
+[0.796s] running egg_info
+[0.806s] creating yolov11.egg-info
+[0.807s] writing yolov11.egg-info/PKG-INFO
+[0.807s] writing dependency_links to yolov11.egg-info/dependency_links.txt
+[0.807s] writing entry points to yolov11.egg-info/entry_points.txt
+[0.807s] writing requirements to yolov11.egg-info/requires.txt
+[0.807s] writing top-level names to yolov11.egg-info/top_level.txt
+[0.808s] writing manifest file 'yolov11.egg-info/SOURCES.txt'
+[0.829s] reading manifest file 'yolov11.egg-info/SOURCES.txt'
+[0.830s] writing manifest file 'yolov11.egg-info/SOURCES.txt'
+[0.841s] running build_ext
+[0.841s] Creating /home/jaehwan/yolov11/install/yolov11/lib/python3.10/site-packages/yolov11.egg-link (link to .)
+[0.842s] Installing yolov11_node script to /home/jaehwan/yolov11/install/yolov11/lib/yolov11
+[0.842s] 
+[0.842s] Installed /home/jaehwan/yolov11/build/yolov11
+[0.842s] running symlink_data
+[0.842s] creating /home/jaehwan/yolov11/install/yolov11/share/ament_index/resource_index/packages
+[0.842s] symbolically linking /home/jaehwan/yolov11/build/yolov11/resource/yolov11 -> /home/jaehwan/yolov11/install/yolov11/share/ament_index/resource_index/packages
+[0.842s] symbolically linking /home/jaehwan/yolov11/build/yolov11/package.xml -> /home/jaehwan/yolov11/install/yolov11/share/yolov11
+[0.874s] Invoked command in '/home/jaehwan/yolov11/build/yolov11' returned '0': AMENT_PREFIX_PATH=/home/jaehwan/yolov11/install/yolov11_msgs:${AMENT_PREFIX_PATH} CMAKE_PREFIX_PATH=/home/jaehwan/yolov11/install/yolov11_msgs LD_LIBRARY_PATH=/home/jaehwan/yolov11/install/yolov11_msgs/lib:/home/jaehwan/ws_offboard_control/build/rohang25:/usr/lib/x86_64-linux-gnu/gazebo-11/plugins:/opt/ros/humble/opt/rviz_ogre_vendor/lib:/opt/ros/humble/lib/x86_64-linux-gnu:/opt/ros/humble/lib:/usr/share/gazebo/../../lib/x86_64-linux-gnu/gazebo-11/plugins PYTHONPATH=/home/jaehwan/yolov11/build/yolov11/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/jaehwan/yolov11/install/yolov11/lib/python3.10/site-packages:/home/jaehwan/yolov11/install/yolov11_msgs/local/lib/python3.10/dist-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py develop --editable --build-directory /home/jaehwan/yolov11/build/yolov11/build --no-deps symlink_data

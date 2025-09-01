@@ -4,7 +4,7 @@
 /
 / Code for Mission Testing
 / 
-/ Last edit date : 250625
+/ Last edit date : 250828
 */
 
 #include <px4_msgs/msg/offboard_control_mode.hpp>
@@ -15,7 +15,7 @@
 #include <px4_msgs/msg/airspeed.hpp>//
 #include <px4_msgs/msg/vehicle_attitude.hpp>//
 #include <px4_msgs/msg/sensor_gps.hpp>
-#include <px4_msgs/msg/home_position.hpp> //??
+#include <px4_msgs/msg/vehicle_status.hpp> 
 #include <geometry_msgs/msg/point32.hpp>
 #include <std_msgs/msg/bool.hpp>
 #include <std_msgs/msg/int32.hpp>
@@ -33,6 +33,7 @@
 #include <chrono>
 #include <iostream>
 #include <algorithm> 
+#include <deque>
 
 #include "algebra.h"
 #include "config.h"
@@ -61,10 +62,10 @@ public:
 		current_confidence_(0.0f), current_timestamp_(0), current_timestamp_sample_(0),
 		current_indicated_airspeed_(0.0f), current_true_airspeed_(0.0f),
 		current_roll_(0.0f), current_pitch_(0.0f), current_yaw_(0.0f), current_heading_(0.0f),
-		current_latitude_(0.0f), current_longitude_(0.0f), current_altitude_(0.0f), heading(0.0f), 
-		state_{State::init}, service_result_{0}, service_done_{false}
+		current_latitude_(0.0f), current_longitude_(0.0f), current_altitude_(0.0f), heading(0.0f), timer_sec(0.0f), ref_timestamp(0),
+		state_{State::init}, service_result_{0}, service_done_{false}, nav_state_(0), arm_state_(1), allow_run_(false), latched_stop_(false), did_mode_arm_(false)
 	{	
-		precision_control_mode = this->declare_parameter<int>("precision_control", 0); // 0: Pixel-based control, 1: NED-based control 
+		precision_control_mode = this->declare_parameter<int>("precision_control", 1); // 0: Pixel-based control, 1: NED-based control 
 
 		rmw_qos_profile_t qos_profile = rmw_qos_profile_sensor_data;
 		qos_profile.history = RMW_QOS_POLICY_HISTORY_KEEP_LAST;
@@ -87,15 +88,15 @@ public:
 		subscription_global_position = this->create_subscription<VehicleGlobalPosition>(
 		    "/fmu/out/vehicle_global_position", qos,
 		    [this](const VehicleGlobalPosition::SharedPtr msg) { this->listener_callback_global_position(msg); });
-
-		subscription_home_position = this->create_subscription<HomePosition>(
-		    "/fmu/out/home_position", qos,
-		    [this](const HomePosition::SharedPtr msg) { this->listener_callback_home_position(msg); });
 		    
 		subscription_airspeed = this->create_subscription<Airspeed>(
 		    "/fmu/out/airspeed", qos,
 		    [this](const Airspeed::SharedPtr msg) { this->listener_callback_airspeed(msg); });
-
+		
+		subscription_vehicle_status = this->create_subscription<VehicleStatus>(
+			"/fmu/out/vehicle_status", qos,
+			[this](const px4_msgs::msg::VehicleStatus::SharedPtr msg) { this->listener_callback_vehicle_status(msg); });
+	
 		// subscription_vehicle_attitude = this->create_subscription<VehicleAttitude>(
 		//     "/fmu/out/vehicle_attitude", qos,
 		//     [this](const VehicleAttitude::SharedPtr msg) { this->listener_callback_attitude(msg); });
@@ -108,13 +109,13 @@ public:
 			"/yolov11/detection", qos,
 			[this](const yolov11_msgs::msg::Detection::SharedPtr msg) { this->listener_callback_object_pixel(msg); });
 
-		subscription_mission_flag = this->create_subscription<std_msgs::msg::Bool>(
-			"/mission_flag", qos,
-			[this](const std_msgs::msg::Bool::SharedPtr msg) { this->listener_callback_mission_flag(msg); });
-
 		subscription_kf_data_valid_flag = this->create_subscription<std_msgs::msg::Bool>(
 			"/kf_data_valid_flag", qos,
 			[this](const std_msgs::msg::Bool::SharedPtr msg) { this->listener_callback_kf_data_valid_flag(msg); });
+
+		subscription_mission_state = this->create_subscription<std_msgs::msg::Int32>(
+			"gpio_state", qos,
+			[this](const std_msgs::msg::Int32::SharedPtr msg) { this->listener_callback_mission_state(msg); });
 		
 		param_service_ = this->create_service<SetGuidanceParam>(
 			"/guidance_param",
@@ -137,29 +138,30 @@ public:
 		if (precision_control_mode == 0)  // Pixel
 		{
 			param[0] = 0;   // control type - 0: PIXEL, 1: NED axis
-			param[1] = 640; // goal position - X axis(1280.0) 
-			param[2] = 360; // goal position - Y axis(720.0) 
+			param[1] = 320; // goal position - X axis(1280.0) 
+			param[2] = 320; // goal position - Y axis(720.0) 
 		}
 		else  // NED
 		{
 			param[0] = 1;   // control type - 0: PIXEL, 1: NED axis
-			param[1] = 35.0018; // goal position - North axis
-			param[2] = 27.3916; // goal position - East axis
+			param[1] = 0; // goal position - North axis 35.0018
+			param[2] = 0; // goal position - East axis 27.3916
 		}
-		param[3] = 0.01;  // p gain - X or North axis
-		param[4] = 0.01;  // p gain - Y or East axis
-		param[5] = 3.0;   // velocity saturation
-		param[6] = 0.5;   // down velocity
+		param[3] = 0.1;  // p gain - X or North axis
+		param[4] = 0.1;  // p gain - Y or East axis
+		param[5] = 1.0;   // velocity saturation
+		param[6] = 0.0;   // down velocity - 0.0 at start
 		param[7] = 0.0;
 		param[8] = 0.0;
 		param[9] = 0.0;
 
-		RCLCPP_INFO(this->get_logger(), "\nMission Start =================== 0721 UPDATE\n");
+		RCLCPP_INFO(this->get_logger(), "\nMission Start =================== 0822 UPDATE\n");
 
 		/******************************
 		*  	Create Log file		  *
 		******************************/
-		create_file(ALT_FILE_PATH);
+		// create_file(PIXEL_FILE_PATH);
+		// create_file(ALT_FILE_PATH);
 
 	};
 
@@ -184,13 +186,13 @@ private:
 
 	rclcpp::Subscription<VehicleLocalPosition>::SharedPtr subscription_local_position;
 	rclcpp::Subscription<VehicleGlobalPosition>::SharedPtr subscription_global_position;
-	rclcpp::Subscription<HomePosition>::SharedPtr subscription_home_position;
 	rclcpp::Subscription<Airspeed>::SharedPtr subscription_airspeed;
 	// rclcpp::Subscription<VehicleAttitude>::SharedPtr subscription_vehicle_attitude;
 	rclcpp::Subscription<SensorGps>::SharedPtr subscription_sensor_gps;
+	rclcpp::Subscription<VehicleStatus>::SharedPtr subscription_vehicle_status;
 	rclcpp::Subscription<geometry_msgs::msg::Point32>::SharedPtr subscription_object_ned;
 	rclcpp::Subscription<yolov11_msgs::msg::Detection>::SharedPtr subscription_object_pixel;
-	rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr subscription_mission_flag;
+	rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr subscription_mission_state;
 	rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr subscription_kf_data_valid_flag;
 
 	rclcpp::TimerBase::SharedPtr timer_;
@@ -198,6 +200,9 @@ private:
 	enum class State{  // only for arm & offboard mode at start
 		init,
 		offboard_requested,
+		offboard_running,
+		offboard_ready,
+		offboard_switch,
 		wait_for_stable_offboard_mode,
 		arm_requested,
 		armed,
@@ -210,9 +215,16 @@ private:
 	bool service_done_;
 	uint64_t log_counter_;
 	uint8_t num_of_steps = 0;
+	uint8_t offboard_setpoint_counter_ = 0;
 	string MISSION_STATUS;
 	string PRECISION_CONTROL_MODE;
-	int precision_control_mode = 0;
+	int precision_control_mode = 1;
+
+	int nav_state_;
+	int arm_state_;
+	bool allow_run_;
+	bool latched_stop_;
+	bool did_mode_arm_;
 
 	float current_confidence_;
 	uint64_t current_timestamp_;
@@ -226,18 +238,25 @@ private:
 	float current_latitude_; // sensor_gps
 	float current_longitude_;
 	float current_altitude_;
+	float current_altitude_rel;  // local position Z offset 보정
 	float current_global_altitude_; // vehicle_global_position
 	float home_latitude_; // home_position(global)
 	float home_longitude_;
 	float home_altitude_; 
 	float heading;			 // for calculation inside loop
 	float yolo_score;
+	float object_dist;
+	float timer_sec;  // 생성자에서 초기화*****
+	uint64_t ref_timestamp;  // 생성자에서 초기화*****
 
 	VehicleLocalPosition local_pose{}; // local position -> subscribed
 	TrajectorySetpoint pose{};  	   // local position -> to be published
+	std::deque<px4_msgs::msg::VehicleLocalPosition> pose_history_;
+
 	geometry_msgs::msg::Point32 current_object_ned; // subscribed object ned
 	geometry_msgs::msg::Point32 current_object_pixel;
 	geometry_msgs::msg::Point32 current_object_;  // pixel / NED 둘 중 선택한 값
+	geometry_msgs::msg::Point32 final_object_;  // 정밀착륙 시 마지막 좌표 저장
 
 	int process = 0;
 	int i = 0;
@@ -248,14 +267,18 @@ private:
 	bool gps_flag = false;
 	bool vision_nodes_control_flag = false;
 	int gimbal_node_control_flag = 0;	 // 0: initial state, 1: start tracking, 2: finished tracking	
-	bool mission_flag = false; 
+	int mission_flag = 1; // 들어오면 1 나가면 0
 	bool detection_flag = false;  // kf_data_valid_flag
+	bool descend_flag = false;
+	bool landing_flag = false;
 
 	float step = MC_SPEED;
 	double h_err = MC_HORIZONTAL_ERROR;
 	double v_err = MC_VERTICAL_ERROR;
 	double a_err = HEADING_ERROR;
 	double DESC_RATE;
+	float MC_ACCEL = 0.25;
+	float set_accel_s = 0;
 
 	std::vector<double> start;
 	std::vector<double> middle;
@@ -263,8 +286,12 @@ private:
 	std::vector<double> center;
 	std::vector<double> local;
 	std::vector<double> local3;
+	std::vector<double> local_vel;
+	std::vector<double> home_local = {0, 0, 0};
 	std::vector<double> set = {0, 0, 0};
 	std::vector<double> set_vel = {0, 0, 0};
+	std::vector<double> set_acc = {0, 0, 0};
+	std::vector<double> vel_prev = {0, 0, 0};
 	double remain;
 
 	double_t param[10]; // Precise landing guidance parameters
@@ -283,20 +310,21 @@ private:
 	
 	void listener_callback_local_position(const VehicleLocalPosition::SharedPtr msg);
 	void listener_callback_global_position(const VehicleGlobalPosition::SharedPtr msg);
-	void listener_callback_home_position(const HomePosition::SharedPtr msg);	
 	void listener_callback_airspeed(const Airspeed::SharedPtr msg);
 	// void listener_callback_attitude(const VehicleAttitude::SharedPtr msg);
 	void listener_callback_gps(const SensorGps::SharedPtr msg);
 	void listener_callback_object_ned(const geometry_msgs::msg::Point32::SharedPtr msg);
 	void listener_callback_object_pixel(const yolov11_msgs::msg::Detection::SharedPtr msg);
-	void listener_callback_mission_flag(const std_msgs::msg::Bool::SharedPtr msg);
+	void listener_callback_mission_state(const std_msgs::msg::Int32::SharedPtr msg);
 	void listener_callback_kf_data_valid_flag(const std_msgs::msg::Bool::SharedPtr msg);
+	void listener_callback_vehicle_status(const VehicleStatus::SharedPtr msg);
 };
 
 /**
  * @brief Send a command to switch to offboard mode / arm & disarm / transition & back
  */
-void OffboardControl::switch_to_offboard_mode(){
+void OffboardControl::switch_to_offboard_mode()
+{
 	RCLCPP_INFO(this->get_logger(), "requesting switch to Offboard mode");
 	request_vehicle_command(VehicleCommand::VEHICLE_CMD_DO_SET_MODE, 1, 6);
 }
@@ -375,7 +403,7 @@ void OffboardControl::request_vehicle_command(uint16_t command, float param1, fl
 void OffboardControl::srv_callback_paramUpdate(
 	const std::shared_ptr<SetGuidanceParam::Request> request,
 	std::shared_ptr<SetGuidanceParam::Response> response)
-  {
+{
 	uint8_t idx = request->index;
 	double val = request->value;
 	if (idx < 10) {
@@ -387,7 +415,7 @@ void OffboardControl::srv_callback_paramUpdate(
 	  response->success = false;
 	  RCLCPP_WARN(this->get_logger(), "[GUIDANCE] invalid index %u", idx);
 	}
-  }
+}
 
   
 /**
@@ -407,8 +435,8 @@ void OffboardControl::listener_callback_local_position(const VehicleLocalPositio
 void OffboardControl::listener_callback_airspeed(const Airspeed::SharedPtr msg)
 {
 	current_confidence_ = msg->confidence;
-	current_timestamp_ = msg->timestamp;
-	current_timestamp_sample_ = msg->timestamp_sample;
+	// current_timestamp_ = msg->timestamp;
+	// current_timestamp_sample_ = msg->timestamp_sample;
 	current_indicated_airspeed_ = msg->indicated_airspeed_m_s;
 	current_true_airspeed_ = msg->true_airspeed_m_s;
 }
@@ -442,7 +470,7 @@ void OffboardControl::listener_callback_gps(const SensorGps::SharedPtr msg)
 
 	if(FRAME_MODE == LLH && gps_flag == false ){  // wait GPS data
 
-		std::vector<double> home_local = {local_pose.y, local_pose.x, -local_pose.z}; // NED -> ENU
+		home_local = {local_pose.y, local_pose.x, -local_pose.z}; // NED -> ENU
 		std::vector<double> home_global = {current_latitude_, current_longitude_, current_altitude_};
 
 		RCLCPP_INFO(this->get_logger(), "global: %f, %f, %f", home_global[0], home_global[1], home_global[2]);
@@ -457,22 +485,27 @@ void OffboardControl::listener_callback_gps(const SensorGps::SharedPtr msg)
 		}
 
 		mission_llh2enu(WPT, home_global);
-		mission_calib_local(WPT, home_local);
+		// mission_calib_local(WPT, home_local);
 
 		gps_flag = true;
 	}
 }
 
+void OffboardControl::listener_callback_vehicle_status(const VehicleStatus::SharedPtr msg)
+{
+	// Offboard → 이탈 시 파일럿 개입으로 간주해 래치(재진입 금지)
+	if (!latched_stop_ && nav_state_ == 14 && msg->nav_state != 14) {  // Offboard 였다가 다른걸로 바뀌면
+		latched_stop_ = true;
+		RCLCPP_WARN(this->get_logger(), "Pilot override detected. Stop all commands.");
+	}
+	nav_state_ = msg->nav_state;
+}
+
 void OffboardControl::listener_callback_global_position(const VehicleGlobalPosition::SharedPtr msg)
 {
 	current_global_altitude_ = msg->alt; // asml
-}
-	
-void OffboardControl::listener_callback_home_position(const HomePosition::SharedPtr msg)
-{
-	home_latitude_  = msg->lat;
-	home_longitude_ = msg->lon;
-	home_altitude_  = msg->alt;
+	current_timestamp_ = msg->timestamp;
+	current_timestamp_sample_ = msg->timestamp_sample;
 }
 
 void OffboardControl::listener_callback_object_pixel(const yolov11_msgs::msg::Detection::SharedPtr msg)
@@ -488,7 +521,7 @@ void OffboardControl::listener_callback_object_ned(const geometry_msgs::msg::Poi
 	current_object_ned = *msg;
 }
 
-void OffboardControl::listener_callback_mission_flag(const std_msgs::msg::Bool::SharedPtr msg)
+void OffboardControl::listener_callback_mission_state(const std_msgs::msg::Int32::SharedPtr msg)
 {
 	mission_flag = msg->data;
 }
@@ -536,13 +569,14 @@ void OffboardControl::publish_trajectory_setpoint()
  	*   Position Update	  *
  	******************************/
 	local3 = {local_pose.y, local_pose.x, -local_pose.z}; // ENU 
+	current_altitude_rel = -local_pose.z - home_local[2]; // 지상고도
 
-	if (precision_control_mode == 0)  // Pixel
+	if (precision_control_mode == 0)  // Pixel raw
 	{
 		current_object_ = current_object_pixel;  // Kalman filtered Pixel -> current_object_ned
-		PRECISION_CONTROL_MODE = "PIXEL";
+		PRECISION_CONTROL_MODE = "RAW";
 	}
-	else  // NED
+	else  // Pixel NED
 	{
 		current_object_ = current_object_ned; 
 		PRECISION_CONTROL_MODE = "NED";
@@ -551,100 +585,160 @@ void OffboardControl::publish_trajectory_setpoint()
  	*   Calculate Setpoint  	  *
  	******************************/
 
-	if(state_ == State::armed){ 
+	if(state_ == State::offboard_running){ 
 		switch(process)
 		{
 		case 0:
-			// i=0; Takeoff at Home
-			set = {local_pose.y, local_pose.x, WPT[i][2]};
-			set_position(pose, set);
-			set_velocity(pose, {NAN, NAN, NAN});  // init
-			set_heading(pose, current_yaw_);
+			// i=0; Switched to Offboard mode
 
-			if(is_arrived_verti(local_pose, WPT[i], v_err)){
-							
-				if(hold_flag == false)
-    				hold_flag = true;
-				if(hold_flag){
-					// ================  set heading towards WP1 ===================
-					heading = get_angle({local_pose.y, local_pose.x}, {WPT[i+1][0], WPT[i+1][1]});
-					set_heading(pose, heading);
+			MISSION_STATUS = "Offboard requested";
+			set_position(pose, WPT[i]);
 
-					if(is_arrived_direc(local_pose, heading, a_err)){
-					    if(hold_flag2 == false && hold(1))
-					        hold_flag2 = true;
-					    if(hold_flag2){
-							RCLCPP_INFO(this->get_logger(), "Take off Complete");
-							process++; // 다음 단계
-							i++;
-
-							hold_flag = false;
-							hold_flag2 = false;
-						}
-					}
-				}
-			}
-
-			break;
-		
-
-		case 1: // to WPT1 (mission point)
-			// i=1; WPT#1
 			vision_nodes_control_flag = true;
 			gimbal_node_control_flag = 1; // Start searching target
-
-			start = {WPT[i-1][0], WPT[i-1][1]};
-			end = {WPT[i][0], WPT[i][1]};
-			local = {local_pose.y, local_pose.x};
-			set = line_guidance(local, end, local, step);
-			set = {local_pose.y + set[0], local_pose.x + set[1], WPT[i][2]};
-			
-			set_position(pose, set);
-
-			if(is_arrived_hori(local_pose, WPT[i], h_err) || is_increase_dist(remain_dist(local_pose, WPT[i]))){
-				if(hold_flag == false && hold(3))
-					hold_flag = true;
-				if(hold_flag){
-					RCLCPP_INFO(this->get_logger(), "\n================== Arrived at WPT2 ==================");
-					process++; 
-					i++;
-
-					hold_flag = false;
-					hold_flag2 = false;
-
-				//    save_timestamp(FILE_PATH, log_index++, timestamp); // 5: arrived at WPT2
-				//    save_timestamp(FILE_PATH, log_index++, timestamp); // 6: P turn start
-				}
+	
+			if (is_arrived_hori(local_pose, WPT[i], h_err)) {
+				RCLCPP_INFO(this->get_logger(), "=================== Arrived at WPT0 ===================");
+				MISSION_STATUS = "Offboard switch COMPLETE";
+				control_mode[0] = false; // position control off
+				control_mode[1] = true; // velocity control on
+				control_mode[2] = true; // acceleration control on
+				// i++;       // 직진 할거면 해제
+				process += 2;  // 직진 할거면 process++ 바꾸고 case 1 주석해제
 			}
 			break;
+
+			// set = {local_pose.y, local_pose.x, WPT[i][2]};
+			// set_position(pose, set);
+			// set_velocity(pose, {NAN, NAN, NAN});  // init
+			// set_heading(pose, current_yaw_);
+
+			// if(is_arrived_verti(local_pose, WPT[i], v_err)){
+							
+			// 	if(hold_flag == false)
+    		// 		hold_flag = true;
+			// 	if(hold_flag){
+			// 		// ================  set heading towards WP1 ===================
+			// 		start = {local_pose.x,local_pose.y};
+			// 		end = {WPT[i][0], WPT[i][1]};
+			// 		heading = get_angle({WPT[i][0], WPT[i][1]}, {WPT[i+1][0], WPT[i+1][1]});
+			// 		set_heading(pose, heading);
+
+			// 		if(is_arrived_direc(local_pose, heading, a_err)){
+			// 		    if(hold_flag2 == false && hold(1))
+			// 		        hold_flag2 = true;
+			// 		    if(hold_flag2){
+			// 				RCLCPP_INFO(this->get_logger(), "Take off Complete");
+			// 				process++; // 다음 단계
+			// 				i++;
+
+			// 				hold_flag = false;
+			// 				hold_flag2 = false;
+			// 			}
+			// 		}
+			// 	}
+			// }
+
+			// break;
 		
+
+		// case 1: // to WPT1 (mission point)
+		// 	// i=1; WPT#1
+		// #ifndef MISSION_TEST_MODE
+			
+		// 	control_mode[0] = false; // position control off
+		// 	control_mode[1] = true; // velocity control on
+		// 	control_mode[2] = true; // acceleration control on
+
+		// 	start = {WPT[i-1][0], WPT[i-1][1]};
+		// 	end = {WPT[i][0], WPT[i][1]};
+		// 	local = {local_pose.y, local_pose.x};
+		// 	local_vel = {local_pose.vy, local_pose.vx};
+		// 	set = line_guidance(start, end, local, step);  //change to start
+		// 	// set = {local_pose.y + set[0], local_pose.x + set[1], WPT[i][2]};
+		// 	set_vel = velocity_guidance_mc(local_vel, vel_prev, set, step, MC_ACCEL, set_accel_s, remain_dist(local_pose, WPT[i]));
+		// 	set_acc = mult_const(mult_const(set_vel, 1/norm(set_vel)), set_accel_s);
+		// 	vel_prev = set_vel;
+			
+		// 	set_position(pose, {NAN, NAN, WPT[i][2]});
+		// 	set_velocity(pose, set_vel);
+		// 	set_accel(pose, set_acc);
+
+		// 	if(is_arrived_hori(local_pose, WPT[i], h_err) || is_increase_dist(remain_dist(local_pose, WPT[i]))){
+		// 		if(hold_flag == false && hold(2))
+		// 			hold_flag = true;
+		// 		if(hold_flag){
+		// 			RCLCPP_INFO(this->get_logger(), "\n================== Arrived at WPT2 ==================");
+		// 			process++; 
+		// 			// i++;
+
+		// 			hold_flag = false;
+		// 			hold_flag2 = false;
+
+		// 		//    save_timestamp(FILE_PATH, log_index++, timestamp); // 5: arrived at WPT2
+		// 		//    save_timestamp(FILE_PATH, log_index++, timestamp); // 6: P turn start
+		// 		}
+		// 	}
+		// 	break;
+		// #else
+		// 	process++; //pass
+		// #endif
+
 
 		case 2: // Precise Landing
 			// i=1; WPT#1 
 		#ifndef MISSION_TEST_MODE
 			if(detection_flag == true){  // if valid detection
-				MISSION_STATUS = "Detected Marker, Start Landing";
-				control_mode[0] = false; // position control off, velocity control on, attitude control off
-				control_mode[1] = true;
-				set = {NAN, NAN, NAN}; 
-				set_vel = precise_landing_guidance(param, current_heading_, current_object_, local3);
+				object_dist = sqrt(current_object_.x*current_object_.x + current_object_.y*current_object_.y);
+				
+				if(object_dist <= 0.2 && !descend_flag){  // 1회 실행
+					param[6] = 0.5;  // 일정 범위 이내로 정렬시 하강 시작
+					set = {NAN, NAN, NAN};
+					descend_flag = true;
+				}
+				
+				if(descend_flag && -local_pose.z < 5 && !landing_flag){  // 1회 실행
+					param[6] = 0.2;  // 5m까지 정밀착륙시 더 느리게 하강
+					//set_vel = {0, 0, -param[6]};  // precise_landing_guidance 안들어가서 바로 ENU로 반환
+					final_object_ = current_object_;  // 마지막 인식값 사용
+					landing_flag = true;
+				}
+			// ====================================================================================================
+				if(object_dist > 0.2 && !descend_flag){  // 정렬 중, 하강 X
+					MISSION_STATUS = "Detected Marker, Start Aligning";
+								
+					set = {NAN, NAN, WPT[i][2]};
+					set_vel = precise_landing_guidance(param, current_heading_, current_object_, local3);
+				}
+				else if(descend_flag && -local_pose.z > 3.5){  // 하강하는 모든 경우	
+					if(!landing_flag){
+						MISSION_STATUS = "Detected Marker, Start Descending -0.5m/s";
+						set_vel = precise_landing_guidance(param, current_heading_, current_object_, local3);
+					} 
+					else {  // landing_flag == true
+						MISSION_STATUS = " Final Marker, Start Descending -0.2m/s";
+						set_vel = precise_landing_guidance(param, current_heading_, final_object_, local3);  // 5m 이하 - 마지막 값으로만 하강
+					}
+				}
+				else if(landing_flag && -local_pose.z < 3.5){  
+					RCLCPP_INFO(this->get_logger(), "\n================== Auto-Land ==================");
+					land();
+					MISSION_STATUS = "AUTO-LAND";
+					landing_flag = false;
+					// =============================== end of mission ====================================
+				}
+			// ====================================================================================================
 				set_position(pose, set);
 				set_velocity(pose, set_vel);
-
-				if(-local_pose.z < 6.0){  // Check landing altitude
-					RCLCPP_INFO(this->get_logger(), "\n================== Landing Complete ==================");
-					land();
-					// disarm();
-				}
 			}
 			else{
 				if(-local_pose.z > 5.0){
 					MISSION_STATUS = "Searching for Marker..";
 
-					if(log_counter_ % 20 == 0){  // every 2 seconds
-						set = {WPT[i][0], WPT[i][1], set[2] - 1}; // descend 3m
-						set_position(pose, set);
-					}
+					set = {NAN, NAN, NAN}; 
+					set_vel = {0, 0, -0.5};   // -0.5m/s로 하강
+					set_position(pose, set);
+					set_velocity(pose, set_vel);
 				}
 				else{
 					MISSION_STATUS = "Cannot find marker, Auto-Land";
@@ -652,10 +746,7 @@ void OffboardControl::publish_trajectory_setpoint()
 					land();
 
 					if(state_ == State::land_requested)
-					{
-						MISSION_STATUS = "Auto Land enabled ";
 						process++;
-					}
 				}
 			}
 
@@ -665,72 +756,110 @@ void OffboardControl::publish_trajectory_setpoint()
 		#endif
 
 
-		case 3: // Rescue mission
+		case 3: // Rescue mission - Hovering & Descend
 			// i=1; WPT#1
-			if(detection_flag == true){
-				MISSION_STATUS = "Detected Target, Approaching";
+			if(detection_flag == true){  // if valid detection
+				object_dist = sqrt(current_object_.x*current_object_.x + current_object_.y*current_object_.y);
 				
-				control_mode[0] = false; // position control off, velocity control on, attitude control off
-				control_mode[1] = true;				
-				set = {NAN, NAN, NAN}; 
-				set_vel = precise_landing_guidance(param, current_heading_, current_object_, local3);
-				set_position(pose, set);
-				set_velocity(pose, set_vel);
+				if(object_dist <= 0.2 && !descend_flag){  // 1회 실행
+					param[6] = 0.5;  // 일정 범위 이내로 정렬시 하강 시작
+					set = {NAN, NAN, NAN};
+					descend_flag = true;
+				}
+				
+				if(descend_flag && -local_pose.z < 5 && !landing_flag){  // 1회 실행
+					param[6] = 0.2;  // 5m까지 정밀착륙시 더 느리게 하강
+					//set_vel = {0, 0, -param[6]};  // precise_landing_guidance 안들어가서 바로 ENU로 반환
+					final_object_ = current_object_;  // 마지막 인식값 사용
+					landing_flag = true;
+				}
 
-				if(-local_pose.z <= 2){  // Check mission altitude
-					MISSION_STATUS = "Waiting for mission";
-					set_position(pose, local3); // hover until mission done manually
-
-					if(mission_flag == true){  // manual input - service call or topic
-						MISSION_STATUS = "Mission Complete, continue ..";
-						
-						process++;
-						detection_flag = false;
-						mission_flag = false;
-						gimbal_node_control_flag = 2; // finished tracking
-						control_mode[0] = true; // position control on
-						control_mode[1] = false; // velocity control off
-
+				if(object_dist > 0.2 && !descend_flag){  // 정렬 중, 하강 X
+					MISSION_STATUS = "Detected Target, Start Aligning";
+								
+					set = {NAN, NAN, WPT[i][2]};
+					set_vel = precise_landing_guidance(param, current_heading_, current_object_, local3);
+				}
+				else if(descend_flag && -local_pose.z > 1.5){  // 하강하는 모든 경우	
+					if(!landing_flag){  
+						MISSION_STATUS = "Detected Target, Start Descending -0.5m/s";
+						set_vel = precise_landing_guidance(param, current_heading_, current_object_, local3);
+					} 
+					else {   // landing_flag == true
+						MISSION_STATUS = " Final Target, Start Descending -0.2m/s";
+						set_vel = precise_landing_guidance(param, current_heading_, final_object_, local3);  // 5m 이하 - 마지막 값으로만 하강
 					}
 				}
+				else if(landing_flag && -local_pose.z <= 1.5){  // 1회 실행
+					RCLCPP_INFO(this->get_logger(), "\n============ Start Hovering ============");
+					MISSION_STATUS = "Hovering for Rescue Mission";
+					set = {local_pose.y, local_pose.x, 1.5};  // check Z
+					set_vel = {NAN, NAN, NAN};
+					set_position(pose, set);
+					set_velocity(pose, set_vel);
+					ref_timestamp = current_timestamp_;  // save timestamp since hover start
+
+					descend_flag = false;
+					landing_flag = false;
+					process++;
+				}  // else?
+				
+				set_position(pose, set);
+				set_velocity(pose, set_vel);
 			}
 			
 			else{
-				if(-local_pose.z > 5.0){
+				if(-local_pose.z > 1.5){
 					MISSION_STATUS = "Searching for Target..";
-					if(log_counter_ % 30 == 0){
-						set = {WPT[i][0], WPT[i][1], -local_pose.z + 1}; // descend 1m
-						set_position(pose, set);
-					}
+					set = {NAN, NAN, NAN}; 
+					set_vel = {0, 0, -0.5};   // -0.5m/s로 하강
+					set_position(pose, set);
+					set_velocity(pose, set_vel);
 				}
 				else{
 					MISSION_STATUS = "Cannot find target, hovering";
-					set_position(pose, local3); // set position to current local position
-					/*
-						Emergency Manual maneuver?
-					*/
+					set = {local_pose.y, local_pose.x, 1.5};  // check Z
+					set_vel = {NAN, NAN, NAN};
+					set_position(pose, set);
+					set_velocity(pose, set_vel);
+					ref_timestamp = current_timestamp_;  // save timestamp since hover start
+
+					process++;
 				}
 			}
 
 			break;
 
 
-		case 4: // Return to WPT1
+		case 4: // Complete mission & Return to WPT1
 			// i=1; WPT#1
 
-			// start = {WPT[i-1][0], WPT[i-1][1]};
-			// end = {WPT[i][0], WPT[i][1]};
-			set = {local_pose.y, local_pose.x, WPT[i][2]};
-			set_position(pose, set);
+			timer_sec = (current_timestamp_ - ref_timestamp) / 1e6; // microsec -> sec
+
+			if(!hold_flag){  // 리프트 장치 하강 전
+				MISSION_STATUS = "Holding, !!! Activate Rescue Device !!!";
+				if(hold(15)) {  // 15초 대기
+					MISSION_STATUS = "Waiting for Return...";
+					hold_flag = true;  // mission_flag 1 -> 0s
+				}
+			}
+
+			if(hold_flag && mission_flag == 1){  // 리프트장치 복귀
+				MISSION_STATUS = "** MISSION COMPLETE** | 고도 상승중...";
+
+				set = {WPT[i][0], WPT[i][1], NAN}; 
+				set_vel = {NAN, NAN, 1.0};   // 1m/s 상승
+				set_position(pose, set);
+				set_velocity(pose, set_vel);
+			}
 
 			// hold X
 			if(is_arrived_verti(local_pose, WPT[i], v_err)){
 				RCLCPP_INFO(this->get_logger(), "================= Move to release point "); // P턴 원 탈출 지점 도달
-
+				ref_timestamp = 0.0; 
+				timer_sec = 0.0;  // reset timer
 				process++;
 				i++;
-				// save_timestamp(FILE_PATH, log_index++, timestamp); // 7: arrived at P end
-				// save_timestamp(FILE_PATH, log_index++, timestamp); // 8: move to WPT3
 			}
 			
 			break;
@@ -738,152 +867,241 @@ void OffboardControl::publish_trajectory_setpoint()
 			
 		case 5: // to WPT2 (Release point)
 			// i=2; WPT#2
+			MISSION_STATUS = "Moving to release point...";
+
 			start = {WPT[i-1][0], WPT[i-1][1]};
 			end = {WPT[i][0], WPT[i][1]};
 			local = {local_pose.y, local_pose.x};
-			set = line_guidance(start, end, local, step);
-			set = {local_pose.y + set[0], local_pose.x + set[1], WPT[i][2]}; 
-			// set_vel = velocity_guidance(local, set);  // acceleration guidance??
+			local_vel = {local_pose.vy, local_pose.vx};
+			set = line_guidance(start, end, local, step);  //change to start
+			// set = {local_pose.y + set[0], local_pose.x + set[1], WPT[i][2]};
+			set_vel = velocity_guidance_mc(local_vel, vel_prev, set, step, MC_ACCEL, set_accel_s, remain_dist(local_pose, WPT[i]));
+			set_acc = mult_const(mult_const(set_vel, 1/norm(set_vel)), set_accel_s);
+			vel_prev = set_vel;
 			
-			set_position(pose, set);
-			// set_velocity(pose, set_vel);
+			set_position(pose, {NAN, NAN, WPT[i][2]});
+			set_velocity(pose, set_vel);
+			set_accel(pose, set_acc);
 
 			if(is_arrived_hori(local_pose, WPT[i], h_err) || is_increase_dist(remain_dist(local_pose, WPT[i]))){
-				RCLCPP_INFO(this->get_logger(), "=================== Arrived at release point ");  // 고도 조건 추가??
-				process++;
-				//i++;
+				if(hold_flag == false && hold(2))
+					hold_flag = true;
+				if(hold_flag){
+					RCLCPP_INFO(this->get_logger(), "\n================== Arrived at WPT2 ==================");
+					process++; 
+					// i++;
 
-				// save_timestamp(FILE_PATH, log_index++, timestamp); // 13: arrived at WP4
-				// save_timestamp(FILE_PATH, log_index++, timestamp); // 14: move to WPT5
+					hold_flag = false;
+					hold_flag2 = false;
+
+				//    save_timestamp(FILE_PATH, log_index++, timestamp); // 5: arrived at WPT2
+				//    save_timestamp(FILE_PATH, log_index++, timestamp); // 6: P turn start
+				}
 			}
 			break;
-
 
 		case 6: // Relase Target
 			// i=2; WPT#2
-			if(detection_flag == true){
-				MISSION_STATUS = "Detected Marker, Approaching";
+			if(detection_flag == true){  // if valid detection
+				object_dist = sqrt(current_object_.x*current_object_.x + current_object_.y*current_object_.y);
 				
-				control_mode[0] = false; // position control on
-				control_mode[1] = true; // velocity control off
-				set = {NAN, NAN, NAN}; 
-				set_vel = precise_landing_guidance(param, current_heading_, current_object_, local3);
-				set_position(pose, set);
-				set_velocity(pose, set_vel);
+				if(object_dist <= 0.2 && !descend_flag){  // 1회 실행
+					param[6] = 0.5;  // 일정 범위 이내로 정렬시 하강 시작
+					set = {NAN, NAN, NAN};
+					descend_flag = true;
+				}
+				
+				if(descend_flag && -local_pose.z < 5 && !landing_flag){  // 1회 실행
+					param[6] = 0.2;  // 5m까지 정밀착륙시 더 느리게 하강
+					//set_vel = {0, 0, -param[6]};  // precise_landing_guidance 안들어가서 바로 ENU로 반환
+					final_object_ = current_object_;  // 마지막 인식값 사용
+					landing_flag = true;
+				}
 
-				if(-local_pose.z <= 2){  // Check mission altitude
-					MISSION_STATUS = "Waiting to release";
-					set_position(pose, local3); // hover until mission done manually
-
-					if(mission_flag == true){  // manual input - service call or topic
-						MISSION_STATUS = "Mission Complete, continue ..";
-						
-						detection_flag = false;
-						mission_flag = false;
-						process++;
-						control_mode[0] = true; // position control on
-						control_mode[1] = false; // velocity control off					}
+				if(object_dist > 0.2 && !descend_flag){  // 정렬 중, 하강 X
+					MISSION_STATUS = "Detected Marker, Start Aligning";
+								
+					set = {NAN, NAN, WPT[i][2]};
+					set_vel = precise_landing_guidance(param, current_heading_, current_object_, local3);
+				}
+				else if(descend_flag && -local_pose.z > 1.5){  // 하강하는 모든 경우	
+					if(!landing_flag){  
+						MISSION_STATUS = "Detected Marker, Start Descending -0.5m/s";
+						set_vel = precise_landing_guidance(param, current_heading_, current_object_, local3);
+					} 
+					else {   // landing_flag == true
+						MISSION_STATUS = " Final Marker, Start Descending -0.2m/s";
+						set_vel = precise_landing_guidance(param, current_heading_, final_object_, local3);  // 5m 이하 - 마지막 값으로만 하강
 					}
 				}
+				else if(landing_flag && -local_pose.z <= 1.5){  // 1회 실행
+					RCLCPP_INFO(this->get_logger(), "\n============ Start Hovering ============");
+					MISSION_STATUS = "Hovering for Release";
+					set = {local_pose.y, local_pose.x, 1.5};  // check Z
+					set_vel = {NAN, NAN, NAN};
+					set_position(pose, set);
+					set_velocity(pose, set_vel);
+					ref_timestamp = current_timestamp_;  // save timestamp since hover start
+
+					descend_flag = false;
+					landing_flag = false;
+					process++;
+				}  // else?
+				
+				set_position(pose, set);
+				set_velocity(pose, set_vel);
 			}
 			
 			else{
-				if(-local_pose.z > 5.0){
+				if(-local_pose.z > 1.5){
 					MISSION_STATUS = "Searching for Marker..";
-					if(log_counter_ % 30 == 0){
-						set = {WPT[i][0], WPT[i][1], -local_pose.z + 1}; // descend 1m
-						set_position(pose, set);
-					}
+					set = {NAN, NAN, NAN}; 
+					set_vel = {0, 0, -0.5};   // -0.5m/s로 하강
+					set_position(pose, set);
+					set_velocity(pose, set_vel);
 				}
 				else{
 					MISSION_STATUS = "Cannot find Marker, hovering";
-					set_position(pose, local3); // set position to current local position
-					/*
-						Emergency Manual maneuver?
-					*/
+					set = {local_pose.y, local_pose.x, 1.5};  // check Z
+					set_vel = {NAN, NAN, NAN};
+					set_position(pose, set);
+					set_velocity(pose, set_vel);
+					ref_timestamp = current_timestamp_;  // save timestamp since hover start
+
+					process++;
 				}
 			}
 
 			break;
 
 
-		case 7: // Return to WPT2
+		case 7: // Complete mission & Return to WPT2
 			// i=2; WPT#2
 
-			// start = {WPT[i-1][0], WPT[i-1][1]};
-			// end = {WPT[i][0], WPT[i][1]};
-			set = {local_pose.y, local_pose.x, WPT[i][2]};  // Alt 30m or Custom
-			set_position(pose, set);
+			timer_sec = (current_timestamp_ - ref_timestamp) / 1e6; // microsec -> sec
+
+			if(!hold_flag){  // 리프트 장치 하강 전
+				MISSION_STATUS = "Holding, !!! Activate Rescue Device !!!";
+				if(hold(15)) {  // 15초 대기
+					MISSION_STATUS = "Waiting for Return...";
+					hold_flag = true;  // mission_flag 1 -> 0s
+				}
+			}
+
+			if(hold_flag && mission_flag == 1){  // 리프트장치 복귀
+				MISSION_STATUS = "** MISSION COMPLETE** | 고도 상승중...";
+
+				set = {WPT[i][0], WPT[i][1], NAN}; 
+				set_vel = {NAN, NAN, 1.0};   // 1m/s 상승
+				set_position(pose, set);
+				set_velocity(pose, set_vel);
+			}
 
 			// hold X
 			if(is_arrived_verti(local_pose, WPT[i], v_err)){
-				RCLCPP_INFO(this->get_logger(), "================= Return to Home "); 
-
+				RCLCPP_INFO(this->get_logger(), "================= Move to Vertiport "); // P턴 원 탈출 지점 도달
+				ref_timestamp = 0.0; 
+				timer_sec = 0.0;  // reset timer
 				process++;
 				i++;
-				// save_timestamp(FILE_PATH, log_index++, timestamp); // 7: arrived at P end
-				// save_timestamp(FILE_PATH, log_index++, timestamp); // 8: move to WPT3
 			}
 			
 			break;
-
 
 		case 8: // to WPT3 (Vertiport)
 			// i=3; WPT#3
+			MISSION_STATUS = "Return to Home...";
+
 			start = {WPT[i-1][0], WPT[i-1][1]};
 			end = {WPT[i][0], WPT[i][1]};
 			local = {local_pose.y, local_pose.x};
-			set = line_guidance(start, end, local, step);
-			set = {local_pose.y + set[0], local_pose.x + set[1], WPT[i][2]}; 
+			local_vel = {local_pose.vy, local_pose.vx};
+			set = line_guidance(start, end, local, step);  //change to start
+			// set = {local_pose.y + set[0], local_pose.x + set[1], WPT[i][2]};
+			set_vel = velocity_guidance_mc(local_vel, vel_prev, set, step, MC_ACCEL, set_accel_s, remain_dist(local_pose, WPT[i]));
+			set_acc = mult_const(mult_const(set_vel, 1/norm(set_vel)), set_accel_s);
+			vel_prev = set_vel;
 			
-			set_position(pose, set);
+			set_position(pose, {NAN, NAN, WPT[i][2]});
+			set_velocity(pose, set_vel);
+			set_accel(pose, set_acc);
 
 			if(is_arrived_hori(local_pose, WPT[i], h_err) || is_increase_dist(remain_dist(local_pose, WPT[i]))){
-				RCLCPP_INFO(this->get_logger(), "=================== Arrived at Vertiport "); 
-				process++;
+				if(hold_flag == false && hold(2))
+					hold_flag = true;
+				if(hold_flag){
+					RCLCPP_INFO(this->get_logger(), "\n================== Arrived at Vertiport ==================");
+					process++; 
+					// i++;
 
-				// save_timestamp(FILE_PATH, log_index++, timestamp); // 13: arrived at WP4
-				// save_timestamp(FILE_PATH, log_index++, timestamp); // 14: move to WPT5
+					hold_flag = false;
+					hold_flag2 = false;
+
+				//    save_timestamp(FILE_PATH, log_index++, timestamp); // 5: arrived at WPT2
+				//    save_timestamp(FILE_PATH, log_index++, timestamp); // 6: P turn start
+				}
 			}
 			break;
-			
 
 		case 9: // Precise Landing
 			// i=3; WPT#3
 
-			if(detection_flag == true){
-				MISSION_STATUS = "Detected Marker, Start Landing";
+			if(detection_flag == true){  // if valid detection
+				object_dist = sqrt(current_object_.x*current_object_.x + current_object_.y*current_object_.y);
 				
-				control_mode[0] = false; // position control on
-				control_mode[1] = true; // velocity control off
-				set = {NAN, NAN, NAN}; 
-				set_vel = precise_landing_guidance(param, current_heading_, current_object_, local3);
+				if(object_dist <= 0.2 && !descend_flag){  // 1회 실행
+					param[6] = 0.5;  // 일정 범위 이내로 정렬시 하강 시작
+					set = {NAN, NAN, NAN};
+					descend_flag = true;
+				}
+				
+				if(descend_flag && -local_pose.z < 5 && !landing_flag){  // 1회 실행
+					param[6] = 0.2;  // 5m까지 정밀착륙시 더 느리게 하강
+					//set_vel = {0, 0, -param[6]};  // precise_landing_guidance 안들어가서 바로 ENU로 반환
+					final_object_ = current_object_;  // 마지막 인식값 사용
+					landing_flag = true;
+				}
+
+				if(object_dist > 0.2 && !descend_flag){  // 정렬 중, 하강 X
+					MISSION_STATUS = "Detected Marker, Start Aligning";
+								
+					set = {NAN, NAN, WPT[i][2]};
+					set_vel = precise_landing_guidance(param, current_heading_, current_object_, local3);
+				}
+				else if(descend_flag && -local_pose.z > 3.5){  // 하강하는 모든 경우	
+					if(!landing_flag){
+						MISSION_STATUS = "Detected Marker, Start Descending -0.5m/s";
+						set_vel = precise_landing_guidance(param, current_heading_, current_object_, local3);
+					} 
+					else {  // landing_flag == true
+						MISSION_STATUS = " Final Marker, Start Descending -0.2m/s";
+						set_vel = precise_landing_guidance(param, current_heading_, final_object_, local3);  // 5m 이하 - 마지막 값으로만 하강
+					}
+				}
+				else if(landing_flag && -local_pose.z < 3.5){  
+					RCLCPP_INFO(this->get_logger(), "\n================== Auto-Land ==================");
+					land();
+					MISSION_STATUS = "AUTO-LAND";
+					landing_flag = false;
+					// =============================== end of mission ====================================
+				}
 				set_position(pose, set);
 				set_velocity(pose, set_vel);
-
-				if(-local_pose.z < 0){  // Check landing altitude
-					RCLCPP_INFO(this->get_logger(), "================== Landing Complete");
-					disarm();
-				}
 			}
 			else{
 				if(-local_pose.z > 5.0){
 					MISSION_STATUS = "Searching for Marker..";
-					if(log_counter_ % 30 == 0){
-						set = {WPT[i][0], WPT[i][1], -local_pose.z + 1}; // descend 1m
-						set_position(pose, set);
-					}
+
+					set = {NAN, NAN, NAN}; 
+					set_vel = {0, 0, -0.5};   // -0.5m/s로 하강
+					set_position(pose, set);
+					set_velocity(pose, set_vel);
 				}
 				else{
-					MISSION_STATUS = "Cannot find marker, Auto-Land";
+					MISSION_STATUS = "Cannot find marker, AUTO-LAND";
 					
 					land();
-
-					if(state_ == State::land_requested)
-					{
-						MISSION_STATUS = "Auto Land enabled ";
-						process++;
-					}
+					
 				}
 			}
 
@@ -894,10 +1112,9 @@ void OffboardControl::publish_trajectory_setpoint()
 	/******************************
  	*  Print & Log current info   *
  	******************************/
-    	remain = remain_dist(local_pose, WPT[i]);
 	// save_setpoint_local(SPT_FILE_PATH, current_timestamp_, i, set, local3);
 	// save_object_pixel(PIXEL_FILE_PATH, current_timestamp_, -local_pose.z, yolo_score, current_object_pixel.x, current_object_pixel.y);
-	save_altitude(ALT_FILE_PATH, current_timestamp_, current_altitude_, current_global_altitude_, local_pose.ref_alt, -local_pose.z);
+	// save_altitude(ALT_FILE_PATH, current_timestamp_, current_altitude_, current_global_altitude_, local_pose.ref_alt, -local_pose.z);
 
 	/******************************
  	*  Publish Setpoint           *
@@ -914,54 +1131,87 @@ void OffboardControl::timer_callback(void){
 	/*************************************
  	*  	Service state (Arming sequence)  *
  	**************************************/		
+	 if (latched_stop_) return; // ★ 파일럿 개입 후엔 완전 정지
+	 if (offboard_setpoint_counter_ < 11) {  // 카운터 갱신
+		 offboard_setpoint_counter_++;
+	}
+
 	switch (state_)
 	{
 	case State::init :
-		switch_to_offboard_mode();
-		state_ = State::offboard_requested;
-		break;
-	case State::offboard_requested :
-		if(service_done_){
-			if (service_result_==0){
-				RCLCPP_INFO(this->get_logger(), "Entered offboard mode");
-				state_ = State::wait_for_stable_offboard_mode;				
-			}
-			else{
-				RCLCPP_ERROR(this->get_logger(), "Failed to enter offboard mode, exiting");
-				rclcpp::shutdown();
-			}
+	{	
+		RCLCPP_INFO(this->get_logger(), "노드 실행");
+		set_position(pose, {NAN, NAN, NAN});
+		state_ = State::offboard_ready;
+	}
+	break;
+	case State::offboard_ready :
+	{	
+		if (offboard_setpoint_counter_ >= 10) {  // WPT0 근처에 오면 오프보드 신호 주기
+			double dist_to_SWITCH = hypot(local_pose.y - WPT[0][0], local_pose.x - WPT[0][1]);
+			double SWITCH_DIST = 5.0f;
+
+			if (dist_to_SWITCH < SWITCH_DIST) {
+				MISSION_STATUS = "Offboard 조건 1 달성, Sending Sepoints... ";
+				state_ = State::offboard_switch;
+			} 
+			else MISSION_STATUS = "** OFFBOARD NOT READY **";        		
 		}
-		break;
-	case State::wait_for_stable_offboard_mode :
-		if (++num_of_steps>10){
-			arm();
-			state_ = State::arm_requested;
+	}
+	break;
+
+	case State::offboard_switch :
+	{	
+		set_position(pose, WPT[i]);  // Send setpoint before switch command
+		publish_offboard_control_mode();
+		publish_trajectory_setpoint(); 
+
+		// 1. 현재 위치 push
+		pose_history_.push_back(local_pose);
+	
+		// 2. 50개 이상이면 오래된 것 제거 (5초치만 유지)
+		if (pose_history_.size() > 10) {
+			pose_history_.pop_front();
 		}
-		break;
-	case State::arm_requested :
-		if(service_done_){
-			if (service_result_==0){
-				RCLCPP_INFO(this->get_logger(), "vehicle is armed");
-				state_ = State::armed;
-			}
-			else{
-				RCLCPP_ERROR(this->get_logger(), "Failed to arm, exiting");
-				rclcpp::shutdown();
-			}
+	
+		// 3. 평균 위치 계산
+		double avg_x = 0.0, avg_y = 0.0;
+		for (const auto& p : pose_history_) {
+			avg_x += p.x;
+			avg_y += p.y;
 		}
-		break;
-	case State::transition_requested :
-		if(service_done_){
-			if (service_result_==0){
-				RCLCPP_INFO(this->get_logger(), "Transition success");
-					state_ = State::armed;
-			}
-			else{
-				RCLCPP_ERROR(this->get_logger(), "Transition Failed, exiting");
-				rclcpp::shutdown();
-			}
+		avg_x /= pose_history_.size();
+		avg_y /= pose_history_.size();
+	
+		// 4. 웨이포인트와 평균 위치 거리 계산
+		double dist_to_SWITCH = hypot(avg_x - WPT[0][1], avg_y - WPT[0][0]);
+	
+		if (dist_to_SWITCH < 0.5) {
+			switch_to_offboard_mode();
+			RCLCPP_INFO(this->get_logger(), "=================== Offboard requested ===================");
+			state_ = State::offboard_running;
 		}
-		break;
+	}
+	break;
+
+	case State::offboard_running :
+	{
+		publish_offboard_control_mode();
+		publish_trajectory_setpoint(); 
+	}		
+		
+	// case State::transition_requested :
+	// 	if(service_done_){
+	// 		if (service_result_==0){
+	// 			RCLCPP_INFO(this->get_logger(), "Transition success");
+	// 				state_ = State::armed;
+	// 		}
+	// 		else{
+	// 			RCLCPP_ERROR(this->get_logger(), "Transition Failed, exiting");
+	// 			rclcpp::shutdown();
+	// 		}
+	// 	}
+	// 	break;
 
 	default:
 		break;
@@ -970,27 +1220,28 @@ void OffboardControl::timer_callback(void){
 	/******************************
  	*  	Publishes Data here       *
  	******************************/
-	publish_offboard_control_mode();
-	publish_trajectory_setpoint(); 	// offboard_control_mode needs to be paired with trajectory_setpoint
 	publish_node_control_flag();	// publish all node control flags 
 
 	/****************************
  	*  	Print Sensor Data       *
  	*****************************/
+	remain = remain_dist(local_pose, WPT[i]);
+
 	log_counter_++;
 	if (log_counter_ % 5 == 0) {
 		RCLCPP_INFO(this->get_logger(),
-					"\n========== CURRENT STATE ==========\n"
+					"\n============== CURRENT STATE ==============\n"
 					"Timestamp: %ld\n"
 					"Current(NED): %.2f, %.2f %.2f\n"
 					"Setpoint(NED): %.2f, %.2f, %.2f\n"
-					"Velocity setpoint:  %.2f, %.2f, %.2f\n"
+					"Velocity setpoint: %.3f, %.3f, %.2f | %.2fm/s | %.2fm/s^2\n"
 					"Object(%s) :: %.2f, %.2f\n"
-					"Current heading: %.2f / Set heading: %.2f\n"
+					"Current heading: %.2f | Set heading: %.2f\n"
 					"Remain Dist: %f, to WPT#%d\n"
 					"Case #%d\n"
-					"========== MISSION STATUS =========\n"
+					"============== MISSION STATUS =============\n"
 					"%s\n"
+					"=========================== Timer: %.1f sec\n",
 					// "Airspeed:\n"
 					// "  Indicated: %.2f m/s, True: %.2f m/s\n"
 					// "Attitude:\n"
@@ -998,19 +1249,19 @@ void OffboardControl::timer_callback(void){
 					// "GPS:\n"
 					// "  Latitude: %.7f, Longitude: %.7f, Altitude: %.2f m\n"
 
-					"==================================\n"
-					"|Altitude|  Global Rel: %.4f, Local: %.4f\n",
+					// "==================================\n"
+					// "|Altitude|  Global Rel: %.4f, Local: %.4f\n",
 					//"  GPS: %.4f, Fused: %.4f\n",
-					current_timestamp_, local_pose.x, local_pose.y, local_pose.z, 
+					current_timestamp_, local_pose.x, local_pose.y, -local_pose.z,  
 					pose.position[0], pose.position[1], pose.position[2],
-					pose.velocity[0], pose.velocity[1], pose.velocity[2],
+					pose.velocity[0], pose.velocity[1], pose.velocity[2], norm(set_vel), set_accel_s,
 					PRECISION_CONTROL_MODE.c_str(), current_object_.x, current_object_.y,
 					current_heading_, DEF_R2D(heading),
-					remain, i, process, MISSION_STATUS.c_str(),
+					remain, i, process, MISSION_STATUS.c_str(), timer_sec
 					// current_indicated_airspeed_, current_true_airspeed_,
 					// current_roll_, current_pitch_, current_heading_,
 					// current_latitude_, current_longitude_, current_altitude_
-					current_altitude_-local_pose.ref_alt, local_pose.z
+					// current_altitude_-local_pose.ref_alt, local_pose.z
 					// current_altitude_, current_global_altitude_
 				);
 	}

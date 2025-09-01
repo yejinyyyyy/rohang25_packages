@@ -1,0 +1,6 @@
+Invoking command in '/home/jaehwan/yolov11/build/yolov11_msgs': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake /home/jaehwan/yolov11/src/yolov11_msgs -DAMENT_CMAKE_SYMLINK_INSTALL=1 -DCMAKE_INSTALL_PREFIX=/home/jaehwan/yolov11/install/yolov11_msgs
+Invoked command in '/home/jaehwan/yolov11/build/yolov11_msgs' returned '0': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake /home/jaehwan/yolov11/src/yolov11_msgs -DAMENT_CMAKE_SYMLINK_INSTALL=1 -DCMAKE_INSTALL_PREFIX=/home/jaehwan/yolov11/install/yolov11_msgs
+Invoking command in '/home/jaehwan/yolov11/build/yolov11_msgs': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --build /home/jaehwan/yolov11/build/yolov11_msgs -- -j12 -l12
+Invoked command in '/home/jaehwan/yolov11/build/yolov11_msgs' returned '0': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --build /home/jaehwan/yolov11/build/yolov11_msgs -- -j12 -l12
+Invoking command in '/home/jaehwan/yolov11/build/yolov11_msgs': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --install /home/jaehwan/yolov11/build/yolov11_msgs
+Invoked command in '/home/jaehwan/yolov11/build/yolov11_msgs' returned '0': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --install /home/jaehwan/yolov11/build/yolov11_msgs

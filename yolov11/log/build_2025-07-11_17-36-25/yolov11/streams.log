@@ -1,0 +1,19 @@
+[0.501s] Invoking command in '/home/jaehwan/yolov11/build/yolov11': LD_LIBRARY_PATH=/home/jaehwan/yolov11/install/yolov11_msgs/lib:/home/jaehwan/ws_offboard_control/build/rohang25:/usr/lib/x86_64-linux-gnu/gazebo-11/plugins:/opt/ros/humble/opt/rviz_ogre_vendor/lib:/opt/ros/humble/lib/x86_64-linux-gnu:/opt/ros/humble/lib:/usr/share/gazebo/../../lib/x86_64-linux-gnu/gazebo-11/plugins PYTHONPATH=/home/jaehwan/yolov11/build/yolov11/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/jaehwan/yolov11/install/yolov11/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py develop --editable --build-directory /home/jaehwan/yolov11/build/yolov11/build --no-deps symlink_data
+[0.611s] /home/jaehwan/.local/lib/python3.10/site-packages/setuptools/_distutils/dist.py:270: UserWarning: Unknown distribution option: 'tests_require'
+[0.611s]   warnings.warn(msg)
+[0.729s] running develop
+[0.881s] running egg_info
+[0.891s] writing yolov11.egg-info/PKG-INFO
+[0.892s] writing dependency_links to yolov11.egg-info/dependency_links.txt
+[0.892s] writing entry points to yolov11.egg-info/entry_points.txt
+[0.892s] writing requirements to yolov11.egg-info/requires.txt
+[0.892s] writing top-level names to yolov11.egg-info/top_level.txt
+[0.914s] reading manifest file 'yolov11.egg-info/SOURCES.txt'
+[0.915s] writing manifest file 'yolov11.egg-info/SOURCES.txt'
+[0.927s] running build_ext
+[0.927s] Creating /home/jaehwan/yolov11/install/yolov11/lib/python3.10/site-packages/yolov11.egg-link (link to .)
+[0.928s] Installing yolov11_node script to /home/jaehwan/yolov11/install/yolov11/lib/yolov11
+[0.928s] 
+[0.928s] Installed /home/jaehwan/yolov11/build/yolov11
+[0.928s] running symlink_data
+[0.952s] Invoked command in '/home/jaehwan/yolov11/build/yolov11' returned '0': LD_LIBRARY_PATH=/home/jaehwan/yolov11/install/yolov11_msgs/lib:/home/jaehwan/ws_offboard_control/build/rohang25:/usr/lib/x86_64-linux-gnu/gazebo-11/plugins:/opt/ros/humble/opt/rviz_ogre_vendor/lib:/opt/ros/humble/lib/x86_64-linux-gnu:/opt/ros/humble/lib:/usr/share/gazebo/../../lib/x86_64-linux-gnu/gazebo-11/plugins PYTHONPATH=/home/jaehwan/yolov11/build/yolov11/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/jaehwan/yolov11/install/yolov11/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py develop --editable --build-directory /home/jaehwan/yolov11/build/yolov11/build --no-deps symlink_data

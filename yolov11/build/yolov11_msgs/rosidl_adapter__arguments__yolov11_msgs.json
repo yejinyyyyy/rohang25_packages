@@ -1,0 +1,6 @@
+{
+  "package_name": "yolov11_msgs",
+  "non_idl_tuples": [
+    "/home/jaehwan/yolov11/src/yolov11_msgs:msg/Detection.msg"
+  ]
+}

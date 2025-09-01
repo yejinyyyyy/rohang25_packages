@@ -10,15 +10,15 @@
 #define FILE_PATH "/home/yejin/log/ROS/wpt_time.csv"
 #define OUTPUT_FILE_PATH "/home/yejin/log/ROS/output.csv"
 //#define LOG_FILE_PATH "/home/yejin/logs/ROS/log.csv"
-#define SPT_FILE_PATH "/home/jaehwan/log/setpoint_local.csv"
-#define PIXEL_FILE_PATH "/home/jaehwan/log/object_pixel.csv"
+#define SPT_FILE_PATH "/home/asec/log/setpoint_local.csv"
+#define PIXEL_FILE_PATH "/home/asec/log/object_pixel.csv"
 #define ALT_FILE_PATH "/home/asec/log/altitude.csv"
 
 /* 
  * KONKUK_BIG_QUAD, KONKUK_SMALL_QUAD, LIDAR_TEST, HANAM, YANGPYEONG, GONGSA, INCHEON, OTHER
  */
-#define MISSION_NUMBER LIDAR_TEST
-// #define MISSION_TEST_MODE
+#define MISSION_NUMBER SACHEON
+//#define MISSION_TEST_MODE  // 정밀착륙만 할거면 주석, 풀미션은 주석해제
 
 // == 비행 특성 ==
 #define FW_HORIZONTAL_ERROR 5.0
@@ -32,7 +32,7 @@
 
 // 아래 특성은 이름 의미와는 달리 임의의 상수로, 실험적으로 찾아진 것
 #define FW_SPEED 15
-#define MC_SPEED 1
+#define MC_SPEED 2
 #define MIN_ROTATION_RADIUS 26
 #define CLIME_RATE 3
 // radius = ((FW_SPEED^2)/(tan(max_roll)*9.81*VEHICLE_MASS))

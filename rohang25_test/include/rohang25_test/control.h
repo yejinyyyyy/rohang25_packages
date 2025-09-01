@@ -14,6 +14,7 @@ void set_position(px4_msgs::msg::TrajectorySetpoint &pose, std::vector<double> c
 void set_heading(px4_msgs::msg::TrajectorySetpoint &pose, double heading);
 void set_altitude(px4_msgs::msg::TrajectorySetpoint &pose, double alt);
 void set_velocity(px4_msgs::msg::TrajectorySetpoint &pose, std::vector<double> vel);
+void set_accel(px4_msgs::msg::TrajectorySetpoint &pose, std::vector<double> acc);
 bool hold(double seconds);
 bool is_arrived_hori(px4_msgs::msg::VehicleLocalPosition local, std::vector<double> set, double hori_err);
 bool is_arrived_verti(px4_msgs::msg::VehicleLocalPosition local, std::vector<double> set, double verti_err);

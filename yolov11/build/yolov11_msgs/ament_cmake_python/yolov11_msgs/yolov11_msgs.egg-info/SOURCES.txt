@@ -1,0 +1,8 @@
+setup.py
+yolov11_msgs/__init__.py
+yolov11_msgs.egg-info/PKG-INFO
+yolov11_msgs.egg-info/SOURCES.txt
+yolov11_msgs.egg-info/dependency_links.txt
+yolov11_msgs.egg-info/top_level.txt
+yolov11_msgs/msg/__init__.py
+yolov11_msgs/msg/_detection.py
