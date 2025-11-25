@@ -72,6 +72,10 @@
     #define MISSION_ALT1 35
     #define MISSION_ALT2 50
 
+#elif MISSION_NUMBER == SACHEON2 //사천 실제 대회장 
+    #define MISSION_ALT1 35
+    #define MISSION_ALT2 10
+
 #else // 임시
     #define MISSION_ALT1 40
     #define MISSION_ALT2 90
@@ -192,18 +196,18 @@ std::vector<std::vector<double>> WPT = {
 
 #elif MISSION_NUMBER == SACHEON //사천
     // 012
-    //{35.0688773, 128.0864906, MISSION_ALT1}, // base
-    {35.0684781, 128.0862252, MISSION_ALT1},  // WPT#7
-    {35.0687931, 128.0865277, MISSION_ALT1}, // WPT#1
-    {35.0691603, 128.0869242, MISSION_ALT1},  // WPT 임시
-    {35.0687931, 128.0865277, MISSION_ALT1}, // WPT#1
-    {35.0685205, 128.0869303, MISSION_ALT1}, // WPT#2
-    {35.0675394, 128.0872670, MISSION_ALT1}, // WPT#3
-    {35.0683686, 128.0881632, MISSION_ALT2}, // WPT#4
-    {35.0685205, 128.0869303, MISSION_ALT1}, // WPT#5
-    {35.0691603, 128.0869242, MISSION_ALT1},  // WPT#6
-    {35.0684781, 128.0862252, MISSION_ALT1},  // WPT#7
-    {35.0688773, 128.0864906, 5} // base
+    {35.0684781, 128.0862252, MISSION_ALT1}, // Offboard 전환 위치 == 구조자 위치, WPT[0]
+    {35.0687931, 128.0865277, MISSION_ALT1}, // Line 1회 시행 후 정밀착륙 위치 (ndef #MISSION_TEST_MODE),  WPT[1] -> 풀미션시 주석처리
+    {35.0691603, 128.0869242, MISSION_ALT1}, // 하기 위치,  WPT[2]
+    {35.0687931, 128.0865277, MISSION_ALT1}  // 버티포트 위치, WPT[3]
+
+#elif MISSION_NUMBER == SACHEON2 //사천 실제 대회장
+    // 012
+    {35.0522617, 128.0396702, MISSION_ALT1}, // Offboard 전환 위치 == 구조자 위치, WPT[0], Mission#15
+    // {35.0522134, 128.0400728, MISSION_ALT2}, //  WPT[1] -> 풀미션시 주석처리, Line 1회 시행 후 정밀착륙 위치 (ndef #MISSION_TEST_MODE), 
+    {35.0521991, 128.0400772, MISSION_ALT2}, // 하기 위치,  WPT[2]
+    {35.0519990, 128.0398716, MISSION_ALT2},  // 버티포트 위치, WPT[3]
+    {35.0519990, 128.0398716, MISSION_ALT2}  // 버티포트 위치, WPT[3]
 
 #else
     // 임시용

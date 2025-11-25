@@ -13,12 +13,13 @@
 #define SPT_FILE_PATH "/home/asec/log/setpoint_local.csv"
 #define PIXEL_FILE_PATH "/home/asec/log/object_pixel.csv"
 #define ALT_FILE_PATH "/home/asec/log/altitude.csv"
+#define SUB_FILE_PATH "/home/asecorin/log/ASEC_flight_data.csv"
 
 /* 
  * KONKUK_BIG_QUAD, KONKUK_SMALL_QUAD, LIDAR_TEST, HANAM, YANGPYEONG, GONGSA, INCHEON, OTHER
  */
-#define MISSION_NUMBER SACHEON
-//#define MISSION_TEST_MODE  // 정밀착륙만 할거면 주석, 풀미션은 주석해제
+#define MISSION_NUMBER SACHEON2
+#define MISSION_TEST_MODE  // 정밀착륙만 할거면 주석, 풀미션은 주석해제
 
 // == 비행 특성 ==
 #define FW_HORIZONTAL_ERROR 5.0
